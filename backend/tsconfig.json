@@ -8,6 +8,7 @@
     "outDir": "dist",
     "esModuleInterop": true,
     "resolveJsonModule": true,
+    "types": ["node"],
     "strict": true,
     "skipLibCheck": true
   },

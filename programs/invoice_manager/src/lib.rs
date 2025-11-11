@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("Fg6PaFpoGXkYsidMpWFK...replace_with_devnet_id");
+declare_id!("F9X1Wm9yMvssSqm7Svv1UH7ZRe9YVdsffzW6krTemMDm");
 
 #[program]
 pub mod invoice_manager {

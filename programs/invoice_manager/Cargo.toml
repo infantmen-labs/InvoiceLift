@@ -8,4 +8,7 @@ name = "invoice_manager"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-anchor-lang = "0.29.0"
+anchor-lang = "0.31.1"
+
+[features]
+idl-build = ["anchor-lang/idl-build"]

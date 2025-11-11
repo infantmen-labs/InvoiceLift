@@ -1,9 +1,12 @@
 [programs.devnet]
-invoice_manager = "ReplaceWithDevnetProgramId"
+invoice_manager = "F9X1Wm9yMvssSqm7Svv1UH7ZRe9YVdsffzW6krTemMDm"
 
 [provider]
 cluster = "devnet"
 wallet = "~/.config/solana/id.json"
+
+[toolchain]
+anchor_version = "0.31.1"
 
 [scripts]
 test = "anchor test"
