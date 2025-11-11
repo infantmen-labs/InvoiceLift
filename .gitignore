@@ -25,3 +25,7 @@ target/
 # OS
 .DS_Store
 Thumbs.db
+
+
+# internal
+/docs/archive
