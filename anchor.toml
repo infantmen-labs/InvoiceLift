@@ -1,0 +1,9 @@
+[programs.devnet]
+invoice_manager = "ReplaceWithDevnetProgramId"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "anchor test"
