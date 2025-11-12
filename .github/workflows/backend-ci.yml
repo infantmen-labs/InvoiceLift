@@ -1,0 +1,41 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install deps
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm i; fi
+
+      - name: Typecheck
+        run: npx tsc -p tsconfig.json --noEmit
+
+      - name: Run tests
+        env:
+          NODE_ENV: test
+          PORT: '0'
+          ENABLE_HMAC: 'true'
+          HMAC_SECRET: 'ci_secret'
+          USDC_MINT: '5Ni6yhgyxdj89BPxcGLid8sg4Qtgayb1WhhxnrGNWRCT'
+          PROGRAM_ID: 'F9X1Wm9yMvssSqm7Svv1UH7ZRe9YVdsffzW6krTemMDm'
+          # RELAYER_KEYPAIR_PATH is mocked in tests; not required
+        run: npm test

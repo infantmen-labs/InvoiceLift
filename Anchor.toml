@@ -9,4 +9,4 @@ wallet = "~/.config/solana/id.json"
 anchor_version = "0.31.1"
 
 [scripts]
-test = "anchor test"
+test = "TS_NODE_PROJECT=tests/tsconfig.json npx mocha -r ts-node/register tests/**/*.ts --timeout 60000"

@@ -1,0 +1,19 @@
+{
+  "name": "invoicelift-anchor-tests",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "test": "mocha -r ts-node/register tests/**/*.ts"
+  },
+  "devDependencies": {
+    "@coral-xyz/anchor": "0.31.1",
+    "@solana/spl-token": "^0.4.8",
+    "@solana/web3.js": "^1.95.3",
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
+    "chai": "^4.3.10",
+    "mocha": "^10.2.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}
