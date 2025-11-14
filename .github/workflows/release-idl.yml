@@ -1,0 +1,54 @@
+name: Release IDL
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+jobs:
+  build-and-upload-idl:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v1.18.18/install)"
+          echo "SOLANA_BIN=${HOME}/.local/share/solana/install/active_release/bin" >> $GITHUB_ENV
+          echo "PATH=${HOME}/.local/share/solana/install/active_release/bin:${PATH}" >> $GITHUB_ENV
+
+      - name: Install Anchor CLI
+        run: |
+          echo "PATH=${HOME}/.local/share/solana/install/active_release/bin:${PATH}" >> $GITHUB_ENV
+          cargo install --git https://github.com/coral-xyz/anchor anchor-cli --tag v0.31.1 --locked
+
+      - name: Anchor build
+        run: |
+          echo "PATH=${HOME}/.local/share/solana/install/active_release/bin:${PATH}" >> $GITHUB_ENV
+          anchor build
+
+      - name: Upload IDL to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/idl/invoice_manager.json
+            target/types/invoice_manager.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

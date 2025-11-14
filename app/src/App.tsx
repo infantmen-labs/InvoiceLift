@@ -3,6 +3,8 @@ import { MintInvoice } from './pages/MintInvoice';
 import { FundInvoice } from './pages/FundInvoice';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { Invoices } from './pages/Invoices';
+import { Portfolio } from './pages/Portfolio';
+import { Marketplace } from './pages/Marketplace';
 import { SignerModeProvider, useSignerMode } from './state/signerMode';
 import { ToastProvider } from './components/Toast';
 
@@ -56,6 +58,10 @@ export default function App(){
             <div style={{ height: 16 }} />
             <FundInvoice />
             <Invoices />
+            <div style={{ height: 16 }} />
+            <Portfolio />
+            <div style={{ height: 16 }} />
+            <Marketplace />
           </div>
         </SignerModeProvider>
       </ToastProvider>

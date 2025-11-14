@@ -1,13 +1,89 @@
 import { AnchorProvider, Program, Wallet, web3, Idl, BN } from '@coral-xyz/anchor'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
-import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token'
+import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } from '@solana/spl-token'
 
 const DEFAULT_COMMITMENT: web3.Commitment = 'confirmed'
 
 function loadKeypair(path: string): web3.Keypair {
   const secret = JSON.parse(readFileSync(path, 'utf8')) as number[]
   return web3.Keypair.fromSecretKey(Uint8Array.from(secret))
+}
+
+export async function buildCancelListingV2Tx(
+  program: Program,
+  invoicePk: web3.PublicKey,
+  seller: web3.PublicKey,
+){
+  const inv: any = await (program.account as any)['invoice'].fetch(invoicePk)
+  const sharesMint = new web3.PublicKey(inv.sharesMint)
+  const [listingPda] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('listing'), invoicePk.toBuffer(), seller.toBuffer()],
+    program.programId,
+  )
+  const [marketAuthority] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('market'), listingPda.toBuffer()],
+    program.programId,
+  )
+  const sellerSharesAta = await getAssociatedTokenAddress(sharesMint, seller)
+  const preIxs: web3.TransactionInstruction[] = []
+  const conn = (program.provider as any).connection as web3.Connection
+  if (!(await conn.getAccountInfo(sellerSharesAta))) {
+    preIxs.push(createAssociatedTokenAccountInstruction(
+      seller,
+      sellerSharesAta,
+      seller,
+      sharesMint,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+    ))
+  }
+  const tx = await (program.methods as any)
+    .cancelListingV2()
+    .accounts({
+      invoice: invoicePk,
+      seller,
+      listing: listingPda,
+      marketAuthority: marketAuthority,
+      sellerSharesAta: sellerSharesAta,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .preInstructions(preIxs)
+    .transaction()
+  return { tx, listingPda, marketAuthority }
+}
+
+export async function buildCreateListingV2Tx(
+  program: Program,
+  invoicePk: web3.PublicKey,
+  seller: web3.PublicKey,
+  qty: BN,
+  price: BN,
+){
+  const inv: any = await (program.account as any)['invoice'].fetch(invoicePk)
+  const sharesMint = new web3.PublicKey(inv.sharesMint)
+  const usdcMint = new web3.PublicKey(inv.usdcMint)
+  const [listingPda] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('listing'), invoicePk.toBuffer(), seller.toBuffer()],
+    program.programId,
+  )
+  const [marketAuthority] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('market'), listingPda.toBuffer()],
+    program.programId,
+  )
+  const tx = await (program.methods as any)
+    .createListingV2(qty, price)
+    .accounts({
+      invoice: invoicePk,
+      seller,
+      sharesMint: sharesMint,
+      usdcMint: usdcMint,
+      listing: listingPda,
+      marketAuthority: marketAuthority,
+      systemProgram: web3.SystemProgram.programId,
+    })
+    .transaction()
+  return { tx, listingPda, marketAuthority }
 }
 
 export function getConnection(): web3.Connection {
@@ -112,6 +188,242 @@ export async function settleInvoice(program: Program, invoicePk: web3.PublicKey,
     .rpc()
 
   return txSig
+}
+
+// Marketplace (escrow-based) transaction builders
+export async function buildCreateListingTx(
+  program: Program,
+  invoicePk: web3.PublicKey,
+  seller: web3.PublicKey,
+  qty: BN,
+  price: BN,
+){
+  const inv: any = await (program.account as any)['invoice'].fetch(invoicePk)
+  const sharesMint = new web3.PublicKey(inv.sharesMint)
+  const usdcMint = new web3.PublicKey(inv.usdcMint)
+  const [listingPda] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('listing'), invoicePk.toBuffer(), seller.toBuffer()],
+    program.programId,
+  )
+  const [marketAuthority] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('market'), listingPda.toBuffer()],
+    program.programId,
+  )
+  const sellerSharesAta = await getAssociatedTokenAddress(sharesMint, seller)
+  const escrowSharesAta = await getAssociatedTokenAddress(sharesMint, marketAuthority, true)
+  const preIxs: web3.TransactionInstruction[] = []
+  // Ensure seller shares ATA exists; payer is the seller
+  const conn = (program.provider as any).connection as web3.Connection
+  const sellerAtaInfo = await conn.getAccountInfo(sellerSharesAta)
+  if (!sellerAtaInfo) {
+    preIxs.push(createAssociatedTokenAccountInstruction(
+      seller,
+      sellerSharesAta,
+      seller,
+      sharesMint,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+    ))
+  }
+
+  const tx = await (program.methods as any)
+    .createListing(qty, price)
+    .accounts({
+      invoice: invoicePk,
+      seller,
+      sharesMint: sharesMint,
+      usdcMint: usdcMint,
+      listing: listingPda,
+      marketAuthority: marketAuthority,
+      sellerSharesAta: sellerSharesAta,
+      escrowSharesAta: escrowSharesAta,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: web3.SystemProgram.programId,
+    })
+    .preInstructions(preIxs)
+    .transaction()
+  return { tx, listingPda, marketAuthority }
+}
+
+export async function buildFulfillListingV2Tx(
+  program: Program,
+  invoicePk: web3.PublicKey,
+  seller: web3.PublicKey,
+  buyer: web3.PublicKey,
+  qty: BN,
+){
+  const inv: any = await (program.account as any)['invoice'].fetch(invoicePk)
+  const sharesMint = new web3.PublicKey(inv.sharesMint)
+  const usdcMint = new web3.PublicKey(inv.usdcMint)
+  const [listingPda] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('listing'), invoicePk.toBuffer(), seller.toBuffer()],
+    program.programId,
+  )
+  const [marketAuthority] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('market'), listingPda.toBuffer()],
+    program.programId,
+  )
+  const buyerUsdcAta = await getAssociatedTokenAddress(usdcMint, buyer)
+  const sellerUsdcAta = await getAssociatedTokenAddress(usdcMint, seller)
+  const sellerSharesAta = await getAssociatedTokenAddress(sharesMint, seller)
+  const buyerSharesAta = await getAssociatedTokenAddress(sharesMint, buyer)
+  const preIxs: web3.TransactionInstruction[] = []
+  const conn = (program.provider as any).connection as web3.Connection
+  // Ensure buyer ATAs exist
+  if (!(await conn.getAccountInfo(buyerUsdcAta))) {
+    preIxs.push(createAssociatedTokenAccountInstruction(
+      buyer,
+      buyerUsdcAta,
+      buyer,
+      usdcMint,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+    ))
+  }
+  if (!(await conn.getAccountInfo(buyerSharesAta))) {
+    preIxs.push(createAssociatedTokenAccountInstruction(
+      buyer,
+      buyerSharesAta,
+      buyer,
+      sharesMint,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+    ))
+  }
+
+  const tx = await (program.methods as any)
+    .fulfillListingV2(qty)
+    .accounts({
+      invoice: invoicePk,
+      buyer,
+      listing: listingPda,
+      marketAuthority: marketAuthority,
+      buyerUsdcAta: buyerUsdcAta,
+      sellerUsdcAta: sellerUsdcAta,
+      sellerSharesAta: sellerSharesAta,
+      buyerSharesAta: buyerSharesAta,
+      sharesMint: sharesMint,
+      usdcMint: usdcMint,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: web3.SystemProgram.programId,
+    })
+    .preInstructions(preIxs)
+    .transaction()
+  return { tx, listingPda, marketAuthority }
+}
+
+export async function buildFulfillListingTx(
+  program: Program,
+  invoicePk: web3.PublicKey,
+  seller: web3.PublicKey,
+  buyer: web3.PublicKey,
+  qty: BN,
+){
+  const inv: any = await (program.account as any)['invoice'].fetch(invoicePk)
+  const sharesMint = new web3.PublicKey(inv.sharesMint)
+  const usdcMint = new web3.PublicKey(inv.usdcMint)
+  const [listingPda] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('listing'), invoicePk.toBuffer(), seller.toBuffer()],
+    program.programId,
+  )
+  const [marketAuthority] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('market'), listingPda.toBuffer()],
+    program.programId,
+  )
+  const buyerUsdcAta = await getAssociatedTokenAddress(usdcMint, buyer)
+  const sellerUsdcAta = await getAssociatedTokenAddress(usdcMint, seller)
+  const escrowSharesAta = await getAssociatedTokenAddress(sharesMint, marketAuthority, true)
+  const buyerSharesAta = await getAssociatedTokenAddress(sharesMint, buyer)
+  const preIxs: web3.TransactionInstruction[] = []
+  const conn = (program.provider as any).connection as web3.Connection
+  // Ensure buyer and seller USDC ATAs exist
+  if (!(await conn.getAccountInfo(buyerUsdcAta))) {
+    preIxs.push(createAssociatedTokenAccountInstruction(
+      buyer,
+      buyerUsdcAta,
+      buyer,
+      usdcMint,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+    ))
+  }
+  if (!(await conn.getAccountInfo(sellerUsdcAta))) {
+    preIxs.push(createAssociatedTokenAccountInstruction(
+      buyer,
+      sellerUsdcAta,
+      seller,
+      usdcMint,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+    ))
+  }
+
+  const tx = await (program.methods as any)
+    .fulfillListing(qty)
+    .accounts({
+      invoice: invoicePk,
+      buyer,
+      listing: listingPda,
+      marketAuthority: marketAuthority,
+      buyerUsdcAta: buyerUsdcAta,
+      sellerUsdcAta: sellerUsdcAta,
+      escrowSharesAta: escrowSharesAta,
+      buyerSharesAta: buyerSharesAta,
+      sharesMint: sharesMint,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: web3.SystemProgram.programId,
+    })
+    .transaction()
+  return { tx, listingPda, marketAuthority }
+}
+
+export async function buildCancelListingTx(
+  program: Program,
+  invoicePk: web3.PublicKey,
+  seller: web3.PublicKey,
+){
+  const inv: any = await (program.account as any)['invoice'].fetch(invoicePk)
+  const sharesMint = new web3.PublicKey(inv.sharesMint)
+  const [listingPda] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('listing'), invoicePk.toBuffer(), seller.toBuffer()],
+    program.programId,
+  )
+  const [marketAuthority] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('market'), listingPda.toBuffer()],
+    program.programId,
+  )
+  const escrowSharesAta = await getAssociatedTokenAddress(sharesMint, marketAuthority, true)
+  const sellerSharesAta = await getAssociatedTokenAddress(sharesMint, seller)
+  const preIxs: web3.TransactionInstruction[] = []
+  const conn = (program.provider as any).connection as web3.Connection
+  const sellerAtaInfo = await conn.getAccountInfo(sellerSharesAta)
+  if (!sellerAtaInfo) {
+    preIxs.push(createAssociatedTokenAccountInstruction(
+      seller,
+      sellerSharesAta,
+      seller,
+      sharesMint,
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+    ))
+  }
+
+  const tx = await (program.methods as any)
+    .cancelListing()
+    .accounts({
+      invoice: invoicePk,
+      seller,
+      listing: listingPda,
+      marketAuthority: marketAuthority,
+      escrowSharesAta: escrowSharesAta,
+      sellerSharesAta: sellerSharesAta,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .transaction()
+  return { tx, listingPda, marketAuthority }
 }
 
 // Phase 2B: initialize per-invoice shares mint with escrow PDA as authority

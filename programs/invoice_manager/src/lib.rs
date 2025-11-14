@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer, MintTo};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer, TransferChecked, MintTo, Revoke};
 use anchor_spl::associated_token::AssociatedToken;
 
 const METADATA_MAX_LEN: usize = 128;
@@ -29,6 +29,101 @@ pub mod invoice_manager {
         Ok(())
     }
 
+// Events
+#[event]
+pub struct ListingFulfilledV1 {
+    pub invoice: Pubkey,
+    pub seller: Pubkey,
+    pub buyer: Pubkey,
+    pub qty: u64,
+    pub total: u64,
+}
+
+#[event]
+pub struct ListingFulfilledV2 {
+    pub invoice: Pubkey,
+    pub seller: Pubkey,
+    pub buyer: Pubkey,
+    pub qty: u64,
+    pub total: u64,
+}
+
+#[event]
+pub struct ListingCanceledV1 {
+    pub invoice: Pubkey,
+    pub seller: Pubkey,
+    pub qty: u64,
+}
+
+#[event]
+pub struct ListingCanceledV2 {
+    pub invoice: Pubkey,
+    pub seller: Pubkey,
+    pub qty: u64,
+}
+
+#[derive(Accounts)]
+pub struct CancelListingV2<'info> {
+    pub invoice: Account<'info, Invoice>,
+    #[account(mut)]
+    pub seller: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"listing", invoice.key().as_ref(), seller.key().as_ref()],
+        bump = listing.bump,
+        constraint = listing.seller == seller.key(),
+    )]
+    pub listing: Account<'info, Listing>,
+    /// CHECK: PDA authority used as delegate in V2
+    #[account(seeds = [b"market", listing.key().as_ref()], bump = listing.market_bump)]
+    pub market_authority: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        constraint = seller_shares_ata.owner == seller.key(),
+        constraint = seller_shares_ata.mint == listing.shares_mint,
+    )]
+    pub seller_shares_ata: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
+ 
+
+#[derive(Accounts)]
+pub struct CreateListingV2<'info> {
+    /// Invoice for which the listing is created
+    pub invoice: Account<'info, Invoice>,
+    #[account(mut)]
+    pub seller: Signer<'info>,
+    pub shares_mint: Account<'info, Mint>,
+    pub usdc_mint: Account<'info, Mint>,
+    #[account(
+        init,
+        payer = seller,
+        seeds = [b"listing", invoice.key().as_ref(), seller.key().as_ref()],
+        bump,
+        space = 8  // disc
+            + 32  // invoice
+            + 32  // seller
+            + 32  // shares_mint
+            + 32  // usdc_mint
+            + 8   // price
+            + 8   // remaining_qty
+            + 1   // bump
+            + 1   // market_bump
+    )]
+    pub listing: Account<'info, Listing>,
+    /// CHECK: PDA authority used as delegate for allowance-based flow
+    #[account(seeds = [b"market", listing.key().as_ref()], bump)]
+    pub market_authority: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+ 
+
+ 
+
+ 
+
     pub fn create_escrow(ctx: Context<CreateEscrow>) -> Result<()> {
         // Record bump so we can sign with PDA later
         let bump = ctx.bumps.escrow_authority;
@@ -41,6 +136,7 @@ pub mod invoice_manager {
         require!(invoice.status == InvoiceStatus::Open || invoice.status == InvoiceStatus::Funded, InvoiceError::WrongStatus);
         require!(ctx.accounts.investor_ata.mint == invoice.usdc_mint, InvoiceError::MintMismatch);
         require!(ctx.accounts.escrow_token.mint == invoice.usdc_mint, InvoiceError::MintMismatch);
+        require!(invoice.funded_amount.saturating_add(amount) <= invoice.amount, InvoiceError::Overfund);
 
         let cpi_accounts = Transfer {
             from: ctx.accounts.investor_ata.to_account_info(),
@@ -96,6 +192,7 @@ pub mod invoice_manager {
         require!(ctx.accounts.escrow_token.mint == invoice.usdc_mint, InvoiceError::MintMismatch);
         // shares mint must be set and match
         require!(ctx.accounts.shares_mint.key() == invoice.shares_mint, InvoiceError::SharesMintMissing);
+        require!(invoice.funded_amount.saturating_add(amount) <= invoice.amount, InvoiceError::Overfund);
 
         // Transfer USDC from investor to escrow
         let cpi_accounts = Transfer {
@@ -126,6 +223,243 @@ pub mod invoice_manager {
         invoice.funded_amount = invoice.funded_amount.saturating_add(amount);
         invoice.status = InvoiceStatus::Funded;
         invoice.investor = ctx.accounts.investor.key();
+        Ok(())
+    }
+
+    // Marketplace V1 (escrow-based shares, atomic fulfill):
+    // - create_listing: seller deposits shares to a marketplace escrow ATA owned by a PDA
+    // - fulfill_listing: buyer pays USDC to seller; program releases shares to buyer from escrow (atomic)
+    // - cancel_listing: seller retrieves remaining shares from escrow
+
+    pub fn create_listing(ctx: Context<CreateListing>, qty: u64, price: u64) -> Result<()> {
+        let invoice = &ctx.accounts.invoice;
+        require!(ctx.accounts.shares_mint.key() == invoice.shares_mint, InvoiceError::SharesMintMissing);
+        require!(ctx.accounts.usdc_mint.key() == invoice.usdc_mint, InvoiceError::MintMismatch);
+        require!(qty > 0 && price > 0, InvoiceError::InvalidParameter);
+
+        // Transfer shares from seller to escrow
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.seller_shares_ata.to_account_info(),
+            to: ctx.accounts.escrow_shares_ata.to_account_info(),
+            authority: ctx.accounts.seller.to_account_info(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
+        token::transfer(cpi_ctx, qty)?;
+
+        let listing = &mut ctx.accounts.listing;
+        listing.invoice = invoice.key();
+        listing.seller = ctx.accounts.seller.key();
+        listing.shares_mint = ctx.accounts.shares_mint.key();
+        listing.usdc_mint = ctx.accounts.usdc_mint.key();
+        listing.price = price;
+        listing.remaining_qty = qty;
+        listing.bump = ctx.bumps.listing;
+        listing.market_bump = ctx.bumps.market_authority;
+        Ok(())
+    }
+
+    pub fn create_listing_v2(ctx: Context<CreateListingV2>, qty: u64, price: u64) -> Result<()> {
+        let invoice = &ctx.accounts.invoice;
+        require!(ctx.accounts.shares_mint.key() == invoice.shares_mint, InvoiceError::SharesMintMissing);
+        require!(ctx.accounts.usdc_mint.key() == invoice.usdc_mint, InvoiceError::MintMismatch);
+        require!(qty > 0 && price > 0, InvoiceError::InvalidParameter);
+
+        let listing = &mut ctx.accounts.listing;
+        listing.invoice = invoice.key();
+        listing.seller = ctx.accounts.seller.key();
+        listing.shares_mint = ctx.accounts.shares_mint.key();
+        listing.usdc_mint = ctx.accounts.usdc_mint.key();
+        listing.price = price;
+        listing.remaining_qty = qty;
+        listing.bump = ctx.bumps.listing;
+        listing.market_bump = ctx.bumps.market_authority;
+        Ok(())
+    }
+
+    pub fn fulfill_listing(ctx: Context<FulfillListing>, qty: u64) -> Result<()> {
+        let listing_key = ctx.accounts.listing.key();
+        let market_bump = ctx.accounts.listing.market_bump;
+        let listing = &mut ctx.accounts.listing;
+        let invoice = &ctx.accounts.invoice;
+        require!(listing.invoice == invoice.key(), InvoiceError::ListingMismatch);
+        require!(listing.shares_mint == invoice.shares_mint, InvoiceError::SharesMintMissing);
+        require!(listing.usdc_mint == invoice.usdc_mint, InvoiceError::MintMismatch);
+        require!(qty > 0 && qty <= listing.remaining_qty, InvoiceError::InsufficientEscrow);
+        // qty has 6 decimals (shares), price has 6 decimals (USDC/share) -> total needs 6 decimals (USDC)
+        let total_raw = qty.checked_mul(listing.price).ok_or(InvoiceError::MathOverflow)?;
+        let total = total_raw
+            .checked_div(1_000_000)
+            .ok_or(InvoiceError::MathOverflow)?;
+
+        // Transfer USDC from buyer to seller
+        let usdc_transfer = Transfer {
+            from: ctx.accounts.buyer_usdc_ata.to_account_info(),
+            to: ctx.accounts.seller_usdc_ata.to_account_info(),
+            authority: ctx.accounts.buyer.to_account_info(),
+        };
+        let usdc_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), usdc_transfer);
+        token::transfer(usdc_ctx, total)?;
+
+        // Transfer shares from escrow to buyer using market authority PDA signer
+        let seeds: &[&[u8]] = &[b"market", listing_key.as_ref(), &[market_bump]];
+        let signer: &[&[&[u8]]] = &[seeds];
+        let share_transfer = Transfer {
+            from: ctx.accounts.escrow_shares_ata.to_account_info(),
+            to: ctx.accounts.buyer_shares_ata.to_account_info(),
+            authority: ctx.accounts.market_authority.to_account_info(),
+        };
+        let share_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            share_transfer,
+            signer,
+        );
+        token::transfer(share_ctx, qty)?;
+
+        listing.remaining_qty = listing.remaining_qty.saturating_sub(qty);
+        // Emit event
+        emit!(ListingFulfilledV1 {
+            invoice: invoice.key(),
+            seller: listing.seller,
+            buyer: ctx.accounts.buyer.key(),
+            qty,
+            total,
+        });
+        Ok(())
+    }
+
+    pub fn cancel_listing(ctx: Context<CancelListing>) -> Result<()> {
+        let listing_key = ctx.accounts.listing.key();
+        let market_bump = ctx.accounts.listing.market_bump;
+        let remaining = ctx.accounts.listing.remaining_qty;
+        if remaining > 0 {
+            let seeds: &[&[u8]] = &[b"market", listing_key.as_ref(), &[market_bump]];
+            let signer: &[&[&[u8]]] = &[seeds];
+            let share_transfer = Transfer {
+                from: ctx.accounts.escrow_shares_ata.to_account_info(),
+                to: ctx.accounts.seller_shares_ata.to_account_info(),
+                authority: ctx.accounts.market_authority.to_account_info(),
+            };
+            let share_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                share_transfer,
+                signer,
+            );
+            token::transfer(share_ctx, remaining)?;
+            ctx.accounts.listing.remaining_qty = 0;
+        }
+        // Emit event for V1 cancel
+        emit!(ListingCanceledV1 {
+            invoice: ctx.accounts.invoice.key(),
+            seller: ctx.accounts.listing.seller,
+            qty: remaining,
+        });
+        Ok(())
+    }
+
+    // Marketplace V2 (allowance-based, no escrow):
+    // - Seller approves shares to marketplace_authority (delegate)
+    // - Buyer approves USDC to marketplace_authority (delegate)
+    // - Program atomically swaps via transfer_checked using PDA signer as delegate
+    pub fn fulfill_listing_v2(ctx: Context<FulfillListingV2>, qty: u64) -> Result<()> {
+        let listing_key = ctx.accounts.listing.key();
+        let market_bump = ctx.accounts.listing.market_bump;
+        let listing = &mut ctx.accounts.listing;
+        let invoice = &ctx.accounts.invoice;
+
+        require!(listing.invoice == invoice.key(), InvoiceError::ListingMismatch);
+        require!(listing.shares_mint == invoice.shares_mint, InvoiceError::SharesMintMissing);
+        require!(listing.usdc_mint == invoice.usdc_mint, InvoiceError::MintMismatch);
+        require!(qty > 0 && qty <= listing.remaining_qty, InvoiceError::InsufficientEscrow);
+
+        // qty has 6 decimals (shares), price has 6 decimals (USDC/share) -> total needs 6 decimals (USDC)
+        let total_raw = qty.checked_mul(listing.price).ok_or(InvoiceError::MathOverflow)?;
+        let total = total_raw.checked_div(1_000_000).ok_or(InvoiceError::MathOverflow)?;
+
+        // Delegation checks: both ATAs must delegate to market authority and have sufficient allowances
+        use anchor_lang::solana_program::program_option::COption;
+        require!(
+            ctx.accounts.seller_shares_ata.delegate == COption::Some(ctx.accounts.market_authority.key()),
+            InvoiceError::DelegateMissing
+        );
+        require!(
+            ctx.accounts.buyer_usdc_ata.delegate == COption::Some(ctx.accounts.market_authority.key()),
+            InvoiceError::DelegateMissing
+        );
+        require!(ctx.accounts.seller_shares_ata.delegated_amount >= qty, InvoiceError::InsufficientAllowance);
+        require!(ctx.accounts.buyer_usdc_ata.delegated_amount >= total, InvoiceError::InsufficientAllowance);
+
+        // PDA signer seeds
+        let seeds: &[&[u8]] = &[b"market", listing_key.as_ref(), &[market_bump]];
+        let signer: &[&[&[u8]]] = &[seeds];
+
+        // Transfer USDC from buyer to seller using PDA as delegate authority
+        let usdc_transfer = TransferChecked {
+            from: ctx.accounts.buyer_usdc_ata.to_account_info(),
+            to: ctx.accounts.seller_usdc_ata.to_account_info(),
+            authority: ctx.accounts.market_authority.to_account_info(),
+            mint: ctx.accounts.usdc_mint.to_account_info(),
+        };
+        let usdc_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            usdc_transfer,
+            signer,
+        );
+        token::transfer_checked(usdc_ctx, total, ctx.accounts.usdc_mint.decimals)?;
+
+        // Transfer shares from seller to buyer using PDA as delegate authority
+        let share_transfer = TransferChecked {
+            from: ctx.accounts.seller_shares_ata.to_account_info(),
+            to: ctx.accounts.buyer_shares_ata.to_account_info(),
+            authority: ctx.accounts.market_authority.to_account_info(),
+            mint: ctx.accounts.shares_mint.to_account_info(),
+        };
+        let share_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            share_transfer,
+            signer,
+        );
+        token::transfer_checked(share_ctx, qty, ctx.accounts.shares_mint.decimals)?;
+
+        // Update remaining planned quantity on listing
+        listing.remaining_qty = listing.remaining_qty.saturating_sub(qty);
+        // Emit event
+        emit!(ListingFulfilledV2 {
+            invoice: invoice.key(),
+            seller: listing.seller,
+            buyer: ctx.accounts.buyer.key(),
+            qty,
+            total,
+        });
+        Ok(())
+    }
+
+    pub fn cancel_listing_v2(ctx: Context<CancelListingV2>) -> Result<()> {
+        // Ensure listing matches invoice and signer is seller
+        let invoice = &ctx.accounts.invoice;
+        let listing = &mut ctx.accounts.listing;
+        require!(listing.invoice == invoice.key(), InvoiceError::ListingMismatch);
+        require!(listing.seller == ctx.accounts.seller.key(), InvoiceError::ListingMismatch);
+
+        // If seller shares ATA delegated to market_authority, revoke it
+        use anchor_lang::solana_program::program_option::COption;
+        if ctx.accounts.seller_shares_ata.delegate == COption::Some(ctx.accounts.market_authority.key()) {
+            let revoke_accounts = Revoke {
+                source: ctx.accounts.seller_shares_ata.to_account_info(),
+                authority: ctx.accounts.seller.to_account_info(),
+            };
+            let revoke_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), revoke_accounts);
+            token::revoke(revoke_ctx)?;
+        }
+
+        // Set remaining qty to 0 to reflect cancellation on-chain
+        let canceled = listing.remaining_qty;
+        listing.remaining_qty = 0;
+        // Emit event
+        emit!(ListingCanceledV2 {
+            invoice: invoice.key(),
+            seller: listing.seller,
+            qty: canceled,
+        });
         Ok(())
     }
 }
@@ -222,6 +556,52 @@ pub struct FundInvoice<'info> {
 }
 
 #[derive(Accounts)]
+pub struct FulfillListingV2<'info> {
+    pub invoice: Account<'info, Invoice>,
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"listing", invoice.key().as_ref(), listing.seller.as_ref()],
+        bump = listing.bump,
+    )]
+    pub listing: Account<'info, Listing>,
+    /// CHECK: PDA authority used as delegate
+    #[account(seeds = [b"market", listing.key().as_ref()], bump = listing.market_bump)]
+    pub market_authority: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        constraint = buyer_usdc_ata.owner == buyer.key(),
+        constraint = buyer_usdc_ata.mint == listing.usdc_mint,
+    )]
+    pub buyer_usdc_ata: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        constraint = seller_usdc_ata.owner == listing.seller,
+        constraint = seller_usdc_ata.mint == listing.usdc_mint,
+    )]
+    pub seller_usdc_ata: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        constraint = seller_shares_ata.owner == listing.seller,
+        constraint = seller_shares_ata.mint == listing.shares_mint,
+    )]
+    pub seller_shares_ata: Account<'info, TokenAccount>,
+    #[account(
+        init_if_needed,
+        payer = buyer,
+        associated_token::mint = shares_mint,
+        associated_token::authority = buyer,
+    )]
+    pub buyer_shares_ata: Account<'info, TokenAccount>,
+    pub shares_mint: Account<'info, Mint>,
+    pub usdc_mint: Account<'info, Mint>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct FundInvoiceFractional<'info> {
     #[account(mut)]
     pub invoice: Account<'info, Invoice>,
@@ -280,6 +660,126 @@ pub struct SetSettled<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+#[derive(Accounts)]
+pub struct CreateListing<'info> {
+    #[account(mut)]
+    pub invoice: Account<'info, Invoice>,
+    #[account(mut)]
+    pub seller: Signer<'info>,
+    pub shares_mint: Account<'info, Mint>,
+    pub usdc_mint: Account<'info, Mint>,
+    #[account(
+        init,
+        payer = seller,
+        seeds = [b"listing", invoice.key().as_ref(), seller.key().as_ref()],
+        bump,
+        space = 8  // disc
+            + 32  // invoice
+            + 32  // seller
+            + 32  // shares_mint
+            + 32  // usdc_mint
+            + 8   // price
+            + 8   // remaining_qty
+            + 1   // bump
+            + 1   // market_bump
+    )]
+    pub listing: Account<'info, Listing>,
+    /// CHECK: PDA authority over escrow ATAs
+    #[account(seeds = [b"market", listing.key().as_ref()], bump)]
+    pub market_authority: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        constraint = seller_shares_ata.owner == seller.key(),
+        constraint = seller_shares_ata.mint == shares_mint.key(),
+    )]
+    pub seller_shares_ata: Account<'info, TokenAccount>,
+    #[account(
+        init_if_needed,
+        payer = seller,
+        associated_token::mint = shares_mint,
+        associated_token::authority = market_authority,
+    )]
+    pub escrow_shares_ata: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct FulfillListing<'info> {
+    pub invoice: Account<'info, Invoice>,
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"listing", invoice.key().as_ref(), listing.seller.as_ref()],
+        bump = listing.bump,
+    )]
+    pub listing: Account<'info, Listing>,
+    /// CHECK: PDA authority
+    #[account(seeds = [b"market", listing.key().as_ref()], bump = listing.market_bump)]
+    pub market_authority: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        constraint = buyer_usdc_ata.owner == buyer.key(),
+        constraint = buyer_usdc_ata.mint == listing.usdc_mint,
+    )]
+    pub buyer_usdc_ata: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        constraint = seller_usdc_ata.owner == listing.seller,
+        constraint = seller_usdc_ata.mint == listing.usdc_mint,
+    )]
+    pub seller_usdc_ata: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        constraint = escrow_shares_ata.mint == listing.shares_mint,
+        constraint = escrow_shares_ata.owner == market_authority.key(),
+    )]
+    pub escrow_shares_ata: Account<'info, TokenAccount>,
+    #[account(
+        init_if_needed,
+        payer = buyer,
+        associated_token::mint = shares_mint,
+        associated_token::authority = buyer,
+    )]
+    pub buyer_shares_ata: Account<'info, TokenAccount>,
+    pub shares_mint: Account<'info, Mint>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CancelListing<'info> {
+    pub invoice: Account<'info, Invoice>,
+    #[account(mut)]
+    pub seller: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"listing", invoice.key().as_ref(), seller.key().as_ref()],
+        bump = listing.bump,
+        constraint = listing.seller == seller.key(),
+    )]
+    pub listing: Account<'info, Listing>,
+    /// CHECK: PDA authority
+    #[account(seeds = [b"market", listing.key().as_ref()], bump = listing.market_bump)]
+    pub market_authority: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        constraint = escrow_shares_ata.mint == listing.shares_mint,
+        constraint = escrow_shares_ata.owner == market_authority.key(),
+    )]
+    pub escrow_shares_ata: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        constraint = seller_shares_ata.owner == seller.key(),
+        constraint = seller_shares_ata.mint == listing.shares_mint,
+    )]
+    pub seller_shares_ata: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
 #[account]
 pub struct Invoice {
     pub seller: Pubkey,
@@ -292,6 +792,18 @@ pub struct Invoice {
     pub usdc_mint: Pubkey,
     pub escrow_bump: u8,
     pub shares_mint: Pubkey,
+}
+
+#[account]
+pub struct Listing {
+    pub invoice: Pubkey,
+    pub seller: Pubkey,
+    pub shares_mint: Pubkey,
+    pub usdc_mint: Pubkey,
+    pub price: u64,
+    pub remaining_qty: u64,
+    pub bump: u8,
+    pub market_bump: u8,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
@@ -307,4 +819,11 @@ pub enum InvoiceError {
     #[msg("Bump not found")] BumpNotFound,
     #[msg("Mint mismatch")] MintMismatch,
     #[msg("Shares mint missing or mismatched")] SharesMintMissing,
+    #[msg("Math overflow")] MathOverflow,
+    #[msg("Listing does not match invoice")] ListingMismatch,
+    #[msg("Insufficient escrowed shares")] InsufficientEscrow,
+    #[msg("Funding amount exceeds invoice total")] Overfund,
+    #[msg("Required delegate missing")] DelegateMissing,
+    #[msg("Insufficient delegated allowance")] InsufficientAllowance,
+    #[msg("Invalid parameter provided")] InvalidParameter,
 }

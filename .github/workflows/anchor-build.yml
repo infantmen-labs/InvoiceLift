@@ -1,0 +1,57 @@
+name: Anchor Build & Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  anchor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v1.18.18/install)"
+          echo "SOLANA_BIN=${HOME}/.local/share/solana/install/active_release/bin" >> $GITHUB_ENV
+          echo "PATH=${HOME}/.local/share/solana/install/active_release/bin:${PATH}" >> $GITHUB_ENV
+
+      - name: Install Anchor CLI
+        run: |
+          echo "PATH=${HOME}/.local/share/solana/install/active_release/bin:${PATH}" >> $GITHUB_ENV
+          cargo install --git https://github.com/coral-xyz/anchor anchor-cli --tag v0.31.1 --locked
+
+      - name: Anchor version
+        run: |
+          echo "PATH=${HOME}/.local/share/solana/install/active_release/bin:${PATH}" >> $GITHUB_ENV
+          anchor --version
+          solana --version
+
+      - name: Anchor build
+        run: |
+          echo "PATH=${HOME}/.local/share/solana/install/active_release/bin:${PATH}" >> $GITHUB_ENV
+          anchor build
+
+      - name: Anchor test
+        env:
+          RUST_BACKTRACE: 1
+        run: |
+          echo "PATH=${HOME}/.local/share/solana/install/active_release/bin:${PATH}" >> $GITHUB_ENV
+          anchor test --skip-lint

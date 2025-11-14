@@ -3,16 +3,32 @@ import request from 'supertest'
 import crypto from 'crypto'
 import path from 'path'
 
-vi.mock('../src/anchor', () => {
+vi.mock('../src/anchor', async () => {
+  const { web3 } = await import('@coral-xyz/anchor')
+  const provider = { connection: { getLatestBlockhash: async () => ({ blockhash: '11111111111111111111111111111111' }), getAccountInfo: async () => null } }
+  function dummyTx(){
+    const tx = new web3.Transaction()
+    tx.add(new web3.TransactionInstruction({ keys: [], programId: web3.SystemProgram.programId }))
+    return tx
+  }
+  function dummyPk(){ return web3.Keypair.generate().publicKey }
   return {
-    getProgram: () => ({}),
+    getProgram: () => ({ programId: dummyPk(), provider }),
+    // Core endpoints used by server.spec.ts
     settleInvoice: async () => 'FAKE_SIG',
     fundInvoice: async () => 'FAKE_SIG',
     mintInvoice: async () => ({ invoicePubkey: { toBase58: () => 'FAKE_INVOICE' }, tx: 'FAKE_SIG' }),
     createEscrow: async () => 'FAKE_SIG',
     fetchInvoice: async () => ({ status: { Open: {} }, amount: '0', fundedAmount: '0' }),
     initShares: async () => ({ sharesMint: { toBase58: () => 'FAKE_SHARES' }, tx: 'FAKE_SIG' }),
-    fundInvoiceFractional: async () => 'FAKE_SIG'
+    fundInvoiceFractional: async () => 'FAKE_SIG',
+    // Add builder stubs so cached index.ts also works for other tests
+    buildCreateListingTx: async () => ({ tx: dummyTx(), listingPda: dummyPk(), marketAuthority: dummyPk() }),
+    buildFulfillListingTx: async () => ({ tx: dummyTx(), listingPda: dummyPk(), marketAuthority: dummyPk() }),
+    buildCancelListingTx: async () => ({ tx: dummyTx(), listingPda: dummyPk(), marketAuthority: dummyPk() }),
+    buildCreateListingV2Tx: async () => ({ tx: dummyTx(), listingPda: dummyPk(), marketAuthority: dummyPk() }),
+    buildFulfillListingV2Tx: async () => ({ tx: dummyTx(), listingPda: dummyPk(), marketAuthority: dummyPk() }),
+    buildCancelListingV2Tx: async () => ({ tx: dummyTx(), listingPda: dummyPk(), marketAuthority: dummyPk() }),
   }
 })
 
@@ -25,8 +41,10 @@ describe('backend server', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test'
     process.env.PORT = '0'
+    process.env.FAUCET_ENABLED = 'false'
     process.env.ENABLE_HMAC = 'true'
     process.env.HMAC_SECRET = 'testsecret'
+    process.env.ADMIN_WALLETS = 'TEST_ADMIN'
     process.env.USDC_MINT = '5Ni6yhgyxdj89BPxcGLid8sg4Qtgayb1WhhxnrGNWRCT'
     process.env.PROGRAM_ID = 'F9X1Wm9yMvssSqm7Svv1UH7ZRe9YVdsffzW6krTemMDm'
     process.env.RELAYER_KEYPAIR_PATH = path.resolve(__dirname, 'dummy.json')
@@ -40,6 +58,7 @@ describe('backend server', () => {
   it('mint endpoint returns invoice and tx', async () => {
     const res = await base
       .post('/api/invoice/mint')
+      .set('x-admin-wallet', 'TEST_ADMIN')
       .set('Content-Type', 'application/json')
       .send(JSON.stringify({ metadataHash: 'demo', amount: '1', dueDate: '1736294400' }))
     expect(res.status).toBe(200)
@@ -51,6 +70,7 @@ describe('backend server', () => {
   it('create-escrow endpoint returns tx', async () => {
     const res = await base
       .post('/api/invoice/11111111111111111111111111111111/create-escrow')
+      .set('x-admin-wallet', 'TEST_ADMIN')
       .send()
     expect(res.status).toBe(200)
     expect(res.body.ok).toBe(true)
@@ -60,6 +80,7 @@ describe('backend server', () => {
   it('init-shares endpoint returns shares mint and tx', async () => {
     const res = await base
       .post('/api/invoice/11111111111111111111111111111111/init-shares')
+      .set('x-admin-wallet', 'TEST_ADMIN')
       .send()
     expect(res.status).toBe(200)
     expect(res.body.ok).toBe(true)
@@ -70,6 +91,7 @@ describe('backend server', () => {
   it('fund endpoint returns tx', async () => {
     const res = await base
       .post('/api/invoice/11111111111111111111111111111111/fund')
+      .set('x-admin-wallet', 'TEST_ADMIN')
       .set('Content-Type', 'application/json')
       .send(JSON.stringify({ amount: '1' }))
     expect(res.status).toBe(200)
@@ -80,6 +102,7 @@ describe('backend server', () => {
   it('fund-fractional endpoint returns tx', async () => {
     const res = await base
       .post('/api/invoice/11111111111111111111111111111111/fund-fractional')
+      .set('x-admin-wallet', 'TEST_ADMIN')
       .set('Content-Type', 'application/json')
       .send(JSON.stringify({ amount: '1' }))
     expect(res.status).toBe(200)

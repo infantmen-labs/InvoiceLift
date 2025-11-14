@@ -13,7 +13,7 @@ export function FundInvoice(){
   const [result, setResult] = useState<{ invoice?: string; fundTx?: string; settleTx?: string; status?: string; error?: string; lastAmount?: string } | null>(null);
   const wallet = useWallet();
   const { connection } = useConnection();
-  const { mode } = useSignerMode();
+  const { mode, adminWallet } = useSignerMode();
   const { show } = useToast();
   const [isSeller, setIsSeller] = useState(false);
 

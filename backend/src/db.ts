@@ -63,6 +63,32 @@ export function initDb(customPath?: string){
       payload TEXT,
       updated_at INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS positions_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_pk TEXT,
+      wallet TEXT,
+      delta TEXT,
+      new_amount TEXT,
+      ts INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_positions_hist_invoice ON positions_history(invoice_pk);
+
+    CREATE TABLE IF NOT EXISTS listings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_pk TEXT,
+      seller TEXT,
+      price TEXT,
+      qty TEXT,
+      remaining_qty TEXT,
+      status TEXT,
+      signature TEXT,
+      created_at INTEGER,
+      updated_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_listings_invoice ON listings(invoice_pk);
+    CREATE INDEX IF NOT EXISTS idx_listings_seller ON listings(seller);
+    CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);
   `)
   // Backfill migration: add shares_mint if missing
   try {
@@ -240,3 +266,130 @@ export function setPositionsCache(invoicePk: string, positions: Array<{ wallet: 
   db.prepare('INSERT INTO positions_cache (invoice_pk, payload, updated_at) VALUES (?,?,?) ON CONFLICT(invoice_pk) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at')
     .run(invoicePk, payload, ts)
 }
+
+export function clearPositionsCache(invoicePk: string){
+  const db = getDb()
+  try { db.prepare('DELETE FROM positions_cache WHERE invoice_pk = ?').run(invoicePk) } catch {}
+}
+
+export function recordPositionsDiffs(invoicePk: string, diffs: Array<{ wallet: string; delta: string; newAmount: string }>){
+  const db = getDb()
+  const ts = nowMs()
+  const stmt = db.prepare('INSERT INTO positions_history (invoice_pk, wallet, delta, new_amount, ts) VALUES (?,?,?,?,?)')
+  const tx = db.transaction((items: Array<{ wallet: string; delta: string; newAmount: string }>) => {
+    for (const d of items) stmt.run(invoicePk, d.wallet, d.delta, d.newAmount, ts)
+  })
+  try { tx(diffs) } catch {}
+}
+
+export function listInvoicesWithSharesMint(){
+  const db = getDb()
+  const rows = db.prepare('SELECT invoice_pk, shares_mint FROM invoices WHERE shares_mint IS NOT NULL').all() as Array<{ invoice_pk: string; shares_mint: string }>
+  return rows.map(r => ({ invoicePk: r.invoice_pk, sharesMint: r.shares_mint }))
+}
+
+export function getPositionsHistory(invoicePk: string, limit: number = 100){
+  const db = getDb()
+  const rows = db.prepare('SELECT wallet, delta, new_amount as newAmount, ts FROM positions_history WHERE invoice_pk = ? ORDER BY ts DESC LIMIT ?').all(invoicePk, limit) as Array<{ wallet: string; delta: string; newAmount: string; ts: number }>
+  return rows
+}
+
+// Listings helpers and types
+export type Listing = {
+  id: number
+  invoicePk: string
+  seller: string
+  price: string
+  qty: string
+  remainingQty: string
+  status: 'Open' | 'Filled' | 'Canceled'
+  signature: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+function mapListingRow(row: any): Listing | null {
+  if (!row) return null
+  return {
+    id: row.id,
+    invoicePk: row.invoice_pk,
+    seller: row.seller,
+    price: row.price,
+    qty: row.qty,
+    remainingQty: row.remaining_qty,
+    status: row.status,
+    signature: row.signature || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function createListing(input: { invoicePk: string; seller: string; price: string; qty: string; signature?: string | null }): Listing {
+  const db = getDb()
+  const ts = nowMs()
+  const info = db.prepare(`INSERT INTO listings (invoice_pk, seller, price, qty, remaining_qty, status, signature, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
+    .run(input.invoicePk, input.seller, input.price, input.qty, input.qty, 'Open', input.signature || null, ts, ts)
+  const id = Number(info.lastInsertRowid)
+  const row = db.prepare('SELECT * FROM listings WHERE id = ?').get(id)
+  return mapListingRow(row) as Listing
+}
+
+export function getListing(id: number): Listing | null {
+  const db = getDb()
+  const row = db.prepare('SELECT * FROM listings WHERE id = ?').get(id)
+  return mapListingRow(row)
+}
+
+export function listListingsByInvoice(invoicePk: string, status?: 'Open' | 'Filled' | 'Canceled'): Listing[] {
+  const db = getDb()
+  let sql = 'SELECT * FROM listings WHERE invoice_pk = ?'
+  const params: any[] = [invoicePk]
+  if (status) { sql += ' AND status = ?'; params.push(status) }
+  sql += ' ORDER BY updated_at DESC LIMIT 200'
+  const rows = db.prepare(sql).all(...params)
+  return (rows || []).map(mapListingRow).filter(Boolean) as Listing[]
+}
+
+export function listListingsBySeller(seller: string, status?: 'Open' | 'Filled' | 'Canceled'): Listing[] {
+  const db = getDb()
+  let sql = 'SELECT * FROM listings WHERE seller = ?'
+  const params: any[] = [seller]
+  if (status) { sql += ' AND status = ?'; params.push(status) }
+  sql += ' ORDER BY updated_at DESC LIMIT 200'
+  const rows = db.prepare(sql).all(...params)
+  return (rows || []).map(mapListingRow).filter(Boolean) as Listing[]
+}
+
+export function cancelListing(id: number, seller: string): Listing | null {
+  const db = getDb()
+  const row = db.prepare('SELECT * FROM listings WHERE id = ?').get(id) as any
+  if (!row) return null
+  if (row.seller !== seller) throw new Error('not seller')
+  if (row.status !== 'Open') throw new Error('not open')
+  db.prepare('UPDATE listings SET status = ?, updated_at = ? WHERE id = ?').run('Canceled', nowMs(), id)
+  const out = db.prepare('SELECT * FROM listings WHERE id = ?').get(id) as any
+  return mapListingRow(out)
+}
+
+export function fillListingPartial(id: number, fillQty: string): Listing | null {
+  const db = getDb()
+  const row = db.prepare('SELECT * FROM listings WHERE id = ?').get(id) as any
+  if (!row) return null
+  if (row.status !== 'Open') throw new Error('not open')
+  const remaining = BigInt(String(row.remaining_qty || '0'))
+  const fill = BigInt(String(fillQty))
+  if (fill <= 0n) throw new Error('fill must be > 0')
+  if (fill > remaining) throw new Error('insufficient remaining')
+  const next = remaining - fill
+  const status = next === 0n ? 'Filled' : 'Open'
+  db.prepare('UPDATE listings SET remaining_qty = ?, status = ?, updated_at = ? WHERE id = ?').run(next.toString(), status, nowMs(), id)
+  const out = db.prepare('SELECT * FROM listings WHERE id = ?').get(id) as any
+  return mapListingRow(out)
+}
+
+export function listOpenListings(limit: number = 200): Listing[] {
+  const db = getDb()
+  const rows = db.prepare('SELECT * FROM listings WHERE status = ? ORDER BY updated_at DESC LIMIT ?').all('Open', limit)
+  return (rows || []).map(mapListingRow).filter(Boolean) as Listing[]
+}
+

@@ -31,6 +31,134 @@ WEBHOOK_TOLERANCE_SEC=300
  FAUCET_ENABLED=false
 ```
 
+### Marketplace Listings: Env flags and signatures
+
+- **Env flags**
+  - **LISTINGS_REQUIRE_SIG**: true/false. Default: true (set to 'false' to disable). When enabled, listing create/cancel/fill require a wallet-signed message. Backend verifies ed25519 signatures (tweetnacl) and checks timestamp tolerance.
+  - **LISTING_SIG_TOL_SEC**: Timestamp tolerance in seconds. Default 300.
+  - **ADMIN_WALLETS**: Comma-separated base58 public keys. Admin-only backend endpoints require header `x-admin-wallet` to match one of these.
+
+- **Headers**
+  - `x-wallet`: Base58 pubkey of the signer (seller for create/cancel, buyer for fill). Must match the message signer.
+  - `x-admin-wallet`: Admin wallet (for admin-gated endpoints like mint, fund, init-shares, fund-fractional, create-escrow).
+
+- **Signature message formats** (UTF-8, newline-delimited). `ts` is epoch milliseconds.
+  - Create listing
+    ```
+    listing:create
+    invoicePk=<INVOICE_PUBKEY>
+    seller=<SELLER_B58>
+    price=<PRICE_BASE_UNITS>
+    qty=<QTY_BASE_UNITS>
+    ts=<EPOCH_MS>
+    ```
+  - Cancel listing
+    ```
+    listing:cancel
+    id=<LISTING_ID>
+    seller=<SELLER_B58>
+    ts=<EPOCH_MS>
+    ```
+  - Fill listing
+    ```
+    listing:fill
+    id=<LISTING_ID>
+    buyer=<BUYER_B58>
+    qty=<QTY_BASE_UNITS>
+    ts=<EPOCH_MS>
+    ```
+
+- **Signature encoding**
+  - Frontend: `signature = base64(wallet.signMessage(utf8(message)))`
+  - Backend expects JSON body fields `{ ts, signature, ... }` alongside required inputs, and verifies with `tweetnacl.sign.detached.verify` using the `x-wallet` header as the public key.
+
+- **Listings endpoints (quick ref)**
+  - `GET /api/listings/open`
+  - `GET /api/invoice/:id/listings`
+  - `GET /api/listings?seller=...`
+  - `POST /api/listings` `{ invoicePk, seller, price, qty, ts, signature }`
+  - `POST /api/listings/:id/cancel` `{ ts, signature }`
+  - `POST /api/listings/:id/fill` `{ qty, ts, signature }`
+
+### Allowance-Based Marketplace (V2)
+
+This flow uses SPL token allowances for an atomic swap without escrow. The program uses a PDA delegate (`marketplace_authority`) derived from the listing to transfer tokens via `transfer_checked`.
+
+- Feature flag (frontend): set `VITE_FEATURE_ALLOWANCE_FILLS=true` to enable V2 UI. Escrow (V1) remains as fallback.
+- Decimals: `qty` and `price` are expressed in base units with 6 decimals. Total USDC is computed on-chain as `(qty * price) / 1_000_000`.
+
+Endpoints (backend builds unsigned txs you sign and submit from the wallet):
+- `POST /api/listings/:id/build-create-v2-tx`
+  - Seller initializes the on-chain Listing account (no escrow transfer).
+  - Headers: `x-wallet: <SELLER_B58>`
+- `POST /api/listings/:id/build-approve-shares`
+  - Seller approves `qty` shares to the `marketplace_authority` PDA.
+  - Headers: `x-wallet: <SELLER_B58>`
+- `POST /api/listings/:id/build-approve-usdc`
+  - Buyer approves total USDC to the `marketplace_authority` PDA.
+  - Headers: `x-wallet: <BUYER_B58>`; Body: `{ "qty": "<QTY_BASE_UNITS>" }`
+- `POST /api/listings/:id/build-fulfill-v2`
+  - Buyer triggers the atomic swap (USDC → seller, shares → buyer) using allowances.
+  - Headers: `x-wallet: <BUYER_B58>`; Body: `{ "qty": "<QTY_BASE_UNITS>" }`
+ - `POST /api/listings/:id/build-cancel-v2-tx`
+   - Seller cancels the listing on-chain (revokes shares allowance, sets remaining_qty=0).
+   - Headers: `x-wallet: <SELLER_B58>`
+ - `POST /api/listings/:id/build-revoke-shares`
+   - Seller convenience revoke for the shares allowance.
+   - Headers: `x-wallet: <SELLER_B58>`
+ - `POST /api/listings/:id/build-revoke-usdc`
+   - Buyer convenience revoke for the USDC allowance.
+   - Headers: `x-wallet: <BUYER_B58>`
+
+Example (buyer approve USDC):
+```
+curl -X POST http://localhost:8080/api/listings/1/build-approve-usdc \
+  -H "Content-Type: application/json" \
+  -H "x-wallet: <BUYER_B58>" \
+  -d '{"qty":"1000000"}'  # 1.000000 shares
+```
+
+Example (buyer fulfill V2):
+```
+curl -X POST http://localhost:8080/api/listings/1/build-fulfill-v2 \
+  -H "Content-Type: application/json" \
+  -H "x-wallet: <BUYER_B58>" \
+  -d '{"qty":"1000000"}'
+```
+
+Troubleshooting:
+- DelegateMissing: Ensure you approved to the PDA delegate derived by the program (endpoints handle the correct PDA).
+- InsufficientAllowance: Approve sufficient `qty` (seller) and `total` USDC (buyer) before fulfill.
+- ATAs: Backend auto-creates missing ATAs as pre-instructions in the unsigned transaction it returns.
+ - UI will surface current delegate and delegated amount for shares (seller) and USDC (buyer) when the allowance feature flag is enabled.
+
+#### End-to-End Flow (V2)
+
+1) Seller creates listing (off-chain DB row):
+   - `POST /api/listings { invoicePk, seller, price, qty, (optional sig) }`
+2) Seller initializes on-chain Listing account without escrow:
+   - `POST /api/listings/:id/build-create-v2-tx` with header `x-wallet: <SELLER>`; sign+submit Tx.
+3) Seller approves shares to the PDA delegate:
+   - `POST /api/listings/:id/build-approve-shares` with `x-wallet: <SELLER>`; sign+submit.
+4) Buyer approves USDC for the desired quantity:
+   - `POST /api/listings/:id/build-approve-usdc` with `x-wallet: <BUYER>` and body `{ qty }` (base units);
+     sign+submit.
+5) Buyer fulfills atomically using allowances:
+   - `POST /api/listings/:id/build-fulfill-v2` with `{ qty }` and `x-wallet: <BUYER>`; sign+submit.
+6) Verify state:
+   - Listing `remaining_qty` decreases (on-chain fetch by backend enrichment).
+   - Buyer’s shares appear in Portfolio (`GET /api/portfolio/:wallet`) and in wallet ATA.
+
+Note: Frontend exposes steps 2–5 as buttons when `VITE_FEATURE_ALLOWANCE_FILLS=true`.
+
+#### Escrow-Based Flow (V1) — Reference
+
+1) Seller creates listing (DB)
+2) Seller deposits shares to escrow and creates the Listing account on-chain:
+   - `POST /api/listings/:id/build-create-tx` (seller signs)
+3) Buyer fills on-chain via escrow path:
+   - `POST /api/listings/:id/build-fulfill-tx` with `{ qty }` (buyer signs)
+
 2) Install and run:
 ```
 cd backend
@@ -89,6 +217,14 @@ curl "http://localhost:8080/api/invoices?wallet=<WALLET_PUBKEY>"
 ```
 curl http://localhost:8080/idl/invoice_manager
 ```
+- Allowance-based Marketplace (V2)
+  - `POST /api/listings/:id/build-create-v2-tx`
+  - `POST /api/listings/:id/build-approve-shares`
+  - `POST /api/listings/:id/build-approve-usdc`
+  - `POST /api/listings/:id/build-fulfill-v2`
+  - `POST /api/listings/:id/build-cancel-v2-tx`
+  - `POST /api/listings/:id/build-revoke-shares`
+  - `POST /api/listings/:id/build-revoke-usdc`
 - POST /api/faucet/usdc (dev only; mints USDC to a wallet)
 ```
 curl -X POST http://localhost:8080/api/faucet/usdc \
@@ -118,6 +254,7 @@ curl -X POST http://localhost:8080/webhook/payment \
 1) Configure app/.env:
 ```
 VITE_BACKEND_URL=http://localhost:8080
+VITE_FEATURE_ALLOWANCE_FILLS=true
 ```
 2) Install and run:
 ```
@@ -131,6 +268,11 @@ npm run dev
   - Investor-signed funding via connected wallet
     - The UI auto-creates your USDC ATA if missing and can use the USDC faucet.
 - Invoices list: filter by status/wallet, open detail panel, explorer links.
+- Marketplace pages (and invoice listings panel):
+  - If `VITE_FEATURE_ALLOWANCE_FILLS=true`, show V2 buttons:
+    - Seller: Init On-chain (V2), Approve Shares
+    - Buyer: Approve USDC, Fill On-chain (V2)
+  - Else, show escrow deposit + Fill On-chain (V1) fallback.
 
 ## Demo Scripts
 - JavaScript (recommended, Node 18+):
@@ -150,7 +292,3 @@ npm run demo
 - CORS origin is configurable via `CORS_ORIGIN` (default http://localhost:5173).
 - For production, keep `ENABLE_HMAC=true` and sign webhooks server-side only.
 - The PoC uses a devnet USDC test mint controlled by the relayer; replace with your own for testing.
-
-## Roadmap
-- Phase 1 (PoC): Done — backend + program + UI working on devnet.
-- Phase 2 (Next): Roles, metadata storage, persistence/indexing, provider webhook integration, tests.

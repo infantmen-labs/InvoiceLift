@@ -13,11 +13,13 @@ export function MintInvoice(){
   const [result, setResult] = useState<{ invoice?: string; mintTx?: string; escrowTx?: string; error?: string } | null>(null);
   const wallet = useWallet();
   const { connection } = useConnection();
-  const { mode } = useSignerMode();
+  const { mode, adminWallet } = useSignerMode();
   const { show } = useToast();
 
   function toBaseUnits(v: string){
-    return v.includes('.') ? Math.round(Number(v) * 1e6).toString() : v;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '0';
+    return Math.round(n * 1e6).toString();
   }
 
   async function handleMint(e: React.FormEvent<HTMLFormElement>){
@@ -32,7 +34,7 @@ export function MintInvoice(){
     try{
       const r = await fetch(`${backend}/api/invoice/mint`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) },
         body: JSON.stringify({ metadataHash, amount, dueDate })
       });
       const j = await r.json();
@@ -40,7 +42,7 @@ export function MintInvoice(){
       const invoice: string = j.invoice;
       const mintTx: string = j.tx;
       show({ text: 'Mint submitted', href: `https://explorer.solana.com/tx/${mintTx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' });
-      const r2 = await fetch(`${backend}/api/invoice/${invoice}/create-escrow`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const r2 = await fetch(`${backend}/api/invoice/${invoice}/create-escrow`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) } });
       const j2 = await r2.json();
       if(!j2.ok) throw new Error(j2.error || 'create-escrow failed');
       show({ text: 'Create Escrow submitted', href: `https://explorer.solana.com/tx/${j2.tx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' });
@@ -62,7 +64,7 @@ export function MintInvoice(){
     const amountStr = String(data.get('amount') || '0');
     const dueDateStr = String(data.get('dueDate') || '0');
     if(!wallet.publicKey) { setResult({ error: 'Connect wallet first' }); return; }
-    const amount = amountStr.includes('.') ? Math.round(Number(amountStr) * 1e6).toString() : amountStr;
+    const amount = toBaseUnits(amountStr);
     const dueDate = dueDateStr;
     setLoading(true);
     setResult(null);

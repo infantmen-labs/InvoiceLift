@@ -7,6 +7,7 @@ type Ctx = {
   mode: SignerMode
   setMode: (m: SignerMode) => void
   isAdmin: boolean
+  adminWallet: string | null
 }
 
 const SignerModeContext = createContext<Ctx | null>(null)
@@ -19,6 +20,7 @@ export function SignerModeProvider({ children }: { children: React.ReactNode }){
     return String(raw).split(',').map((s) => s.trim()).filter(Boolean)
   }, [])
   const isAdmin = !!(wallet.publicKey && adminList.includes(wallet.publicKey.toBase58()))
+  const adminWallet = isAdmin && wallet.publicKey ? wallet.publicKey.toBase58() : null
 
   // Default to Wallet if a wallet is connected and user hasn't switched yet
   useEffect(() => {
@@ -35,7 +37,7 @@ export function SignerModeProvider({ children }: { children: React.ReactNode }){
   }, [isAdmin])
 
   return (
-    <SignerModeContext.Provider value={{ mode, setMode, isAdmin }}>
+    <SignerModeContext.Provider value={{ mode, setMode, isAdmin, adminWallet }}>
       {children}
     </SignerModeContext.Provider>
   )

@@ -24,7 +24,7 @@ type InvoiceRow = {
   lastSig: string | null
 }
 
-export function Invoices(){
+export function Invoices() {
   const [items, setItems] = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<string>('')
@@ -35,6 +35,22 @@ export function Invoices(){
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [positions, setPositions] = useState<Array<{ wallet: string; amount: string }>>([])
+  const [history, setHistory] = useState<Array<{ wallet: string; delta: string; newAmount: string; ts: number }>>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [listings, setListings] = useState<Array<{ id: number; seller: string; price: string; qty: string; remainingQty: string; status: string; createdAt: number; escrowDeposited?: boolean; onChain?: boolean }>>([])
+  const [listingsLoading, setListingsLoading] = useState(false)
+  const [listPrice, setListPrice] = useState('')
+  const [listQty, setListQty] = useState('')
+  const [createListingLoading, setCreateListingLoading] = useState(false)
+  const [depositLoadingId, setDepositLoadingId] = useState<number | null>(null)
+  const [depositedIds, setDepositedIds] = useState<Record<number, boolean>>({})
+  const [detailDb, setDetailDb] = useState<InvoiceRow | null>(null)
+  const [fillQtyById, setFillQtyById] = useState<Record<number, string>>({})
+  const [fillLoadingId, setFillLoadingId] = useState<number | null>(null)
+  const [approveSharesLoadingId, setApproveSharesLoadingId] = useState<number | null>(null)
+  const [approveUsdcLoadingId, setApproveUsdcLoadingId] = useState<number | null>(null)
+  const [initV2LoadingId, setInitV2LoadingId] = useState<number | null>(null)
+  const allowanceEnabled = (import.meta as any).env.VITE_FEATURE_ALLOWANCE_FILLS !== 'false'
   const [fracAmount, setFracAmount] = useState<string>('')
   const [fxLoading, setFxLoading] = useState(false)
   const [fxError, setFxError] = useState<string | null>(null)
@@ -43,8 +59,169 @@ export function Invoices(){
   const [fxWalletLoading, setFxWalletLoading] = useState(false)
   const walletAdapter = useWallet()
   const { connection } = useConnection()
-  const { mode } = useSignerMode()
+  const { mode, adminWallet } = useSignerMode()
   const { show } = useToast()
+
+  function bytesToBase64(bytes: Uint8Array){
+    let bin = ''
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+    return btoa(bin)
+  }
+
+  async function handleRevokeSharesV2(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    try{
+      const r = await fetch(`${backend}/api/listings/${id}/build-revoke-shares`, { method: 'POST', headers: { 'x-wallet': me } })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'build-revoke-shares failed')
+      const sig = await sendB64Tx(j.tx)
+      show({ text: 'Revoke shares allowance submitted', href: `https://explorer.solana.com/tx/${sig}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+  }
+
+  async function handleRevokeUsdcV2(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    try{
+      const r = await fetch(`${backend}/api/listings/${id}/build-revoke-usdc`, { method: 'POST', headers: { 'x-wallet': me } })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'build-revoke-usdc failed')
+      const sig = await sendB64Tx(j.tx)
+      show({ text: 'Revoke USDC allowance submitted', href: `https://explorer.solana.com/tx/${sig}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+  }
+
+  async function handleCancelListingOnchainV2(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    try{
+      const r = await fetch(`${backend}/api/listings/${id}/build-cancel-v2-tx`, { method: 'POST', headers: { 'x-wallet': me } })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'build-cancel-v2 failed')
+      const sig = await sendB64Tx(j.tx)
+      show({ text: 'On-chain cancel (V2) submitted', href: `https://explorer.solana.com/tx/${sig}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+      if (selected) await loadListings(selected)
+    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+  }
+
+  async function handleInitListingV2(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    try{
+      setInitV2LoadingId(id)
+      const r = await fetch(`${backend}/api/listings/${id}/build-create-v2-tx`, { method: 'POST', headers: { 'x-wallet': me } })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'build-create-v2 failed')
+      const sig = await sendB64Tx(j.tx)
+      show({ text: 'Init listing (V2) submitted', href: `https://explorer.solana.com/tx/${sig}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+      if (selected) await loadListings(selected)
+    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+    finally { setInitV2LoadingId(null) }
+  }
+  async function signMessageIfPossible(message: string){
+    try{
+      if (!walletAdapter.publicKey || !walletAdapter.signMessage) return null
+      const sig = await walletAdapter.signMessage(new TextEncoder().encode(message))
+      return bytesToBase64(sig)
+    }catch{ return null }
+  }
+
+  async function handleApproveSharesV2(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    try{
+      setApproveSharesLoadingId(id)
+      const r = await fetch(`${backend}/api/listings/${id}/build-approve-shares`, { method: 'POST', headers: { 'x-wallet': me } })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'build-approve-shares failed')
+      const sig = await sendB64Tx(j.tx)
+      show({ text: 'Approve shares submitted', href: `https://explorer.solana.com/tx/${sig}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+    finally { setApproveSharesLoadingId(null) }
+  }
+
+  async function handleApproveUsdcV2(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    const q = Number(fillQtyById[id] || '0')
+    if (!Number.isFinite(q) || q <= 0) { show({ text: 'Enter a valid quantity first', kind: 'error' }); return }
+    const qtyBase = Math.round(q * 1_000_000)
+    try{
+      setApproveUsdcLoadingId(id)
+      const r = await fetch(`${backend}/api/listings/${id}/build-approve-usdc`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-wallet': me }, body: JSON.stringify({ qty: String(qtyBase) }) })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'build-approve-usdc failed')
+      const sig = await sendB64Tx(j.tx)
+      show({ text: 'Approve USDC submitted', href: `https://explorer.solana.com/tx/${sig}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+    finally { setApproveUsdcLoadingId(null) }
+  }
+
+  async function handleFulfillListingOnchainV2(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    const q = Number(fillQtyById[id] || '0')
+    if (!Number.isFinite(q) || q <= 0) { show({ text: 'Enter a valid quantity', kind: 'error' }); return }
+    const qtyBase = Math.round(q * 1_000_000)
+    setFillLoadingId(id)
+    try{
+      const r = await fetch(`${backend}/api/listings/${id}/build-fulfill-v2`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-wallet': me }, body: JSON.stringify({ qty: String(qtyBase) }) })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'build-fulfill-v2 failed')
+      const sig = await sendB64Tx(j.tx)
+      show({ text: 'On-chain fill (V2) submitted', href: `https://explorer.solana.com/tx/${sig}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+      setFillQtyById((m) => ({ ...m, [id]: '' }))
+      if (selected) await loadListings(selected)
+    }catch(e: any){ 
+      const msg = e?.message || String(e)
+      if (msg.includes('insufficient funds')){
+        const l = listings.find((x) => x.id === id)
+        const price = l ? Number(l.price) / 1_000_000 : 0
+        const total = price * q
+        show({ text: `Insufficient USDC or allowance. You need approximately ${total} USDC (+ fees). Use the faucet or approve sufficient allowance and try again.`, kind: 'error' })
+      } else {
+        show({ text: msg, kind: 'error' })
+      }
+    }
+    finally { setFillLoadingId(null) }
+  }
+  function decodeB64(b64: string){
+    const raw = atob(b64)
+    const bytes = new Uint8Array(raw.length)
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
+    return bytes
+  }
+  async function sendB64Tx(b64: string){
+    if (!walletAdapter.publicKey || !walletAdapter.signTransaction) throw new Error('Wallet not ready')
+    const tx = web3.Transaction.from(decodeB64(b64))
+    tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash
+    tx.feePayer = walletAdapter.publicKey
+    const signed = await walletAdapter.signTransaction(tx)
+    const sig = await connection.sendRawTransaction(signed.serialize())
+    await connection.confirmTransaction(sig, 'confirmed')
+    return sig
+  }
+  function fmt6val(v: any){
+    try{
+      if (typeof v === 'number') return v / 1_000_000
+      if (typeof v === 'string' && v.trim() !== '') { const n = Number(v); if (!isNaN(n)) return n / 1_000_000 }
+      if (v && v.toString) { const s = v.toString(); const n = Number(s); if (!isNaN(n)) return n / 1_000_000 }
+    }catch{}
+    return 0
+  }
+  function fmt6(v: any){ const n = fmt6val(v); return n.toLocaleString(undefined, { maximumFractionDigits: 6 }) }
+  function fmtDateSmart(v: any){
+    try{
+      if (typeof v === 'number') return new Date(v > 1e12 ? v : v * 1000).toLocaleString()
+      if (typeof v === 'string'){
+        const s = v.trim()
+        if (/^\d+$/.test(s)) { const n = Number(s); return new Date(n > 1e12 ? n : n * 1000).toLocaleString() }
+        if (/^[0-9a-fA-F]+$/.test(s)) { const n = parseInt(s, 16); return new Date(n > 1e12 ? n : n * 1000).toLocaleString() }
+      }
+    }catch{}
+    return String(v)
+  }
 
   const qs = useMemo(() => {
     const p = new URLSearchParams()
@@ -64,6 +241,158 @@ export function Invoices(){
       setLoading(false)
     }
   }
+
+  async function loadHistory(id: string){
+    setHistoryLoading(true)
+    try{
+      const r = await fetch(`${backend}/api/invoice/${id}/positions/history?limit=50`)
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'history load failed')
+      setHistory(j.history || [])
+    }catch(e: any){ /* keep UI resilient; show only detail error */ }
+    finally { setHistoryLoading(false) }
+  }
+  
+  async function loadListings(id: string){
+    setListingsLoading(true)
+    try{
+      const r = await fetch(`${backend}/api/invoice/${id}/listings`)
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'listings load failed')
+      const rows = (j.listings || []).map((x: any) => ({ id: x.id, seller: x.seller, price: String(x.price), qty: String(x.qty), remainingQty: String(x.remainingQty), status: String(x.status), createdAt: Number(x.createdAt), escrowDeposited: !!x.escrowDeposited, onChain: !!x.onChain }))
+      setListings(rows)
+    }catch{}
+    finally{ setListingsLoading(false) }
+  }
+
+  async function handleCreateListing(){
+    if (!selected) return
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    const p = Number(listPrice)
+    const q = Number(listQty)
+    if (!Number.isFinite(p) || p <= 0 || !Number.isFinite(q) || q <= 0) { show({ text: 'Enter valid price and quantity', kind: 'error' }); return }
+    const priceBase = Math.round(p * 1_000_000)
+    const qtyBase = Math.round(q * 1_000_000)
+    setCreateListingLoading(true)
+    try{
+      const ts = Date.now()
+      const msg = `listing:create\ninvoicePk=${selected}\nseller=${me}\nprice=${priceBase}\nqty=${qtyBase}\nts=${ts}`
+      const signature = await signMessageIfPossible(msg)
+      const r = await fetch(`${backend}/api/listings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-wallet': me },
+        body: JSON.stringify({ invoicePk: selected, seller: me, price: String(priceBase), qty: String(qtyBase), ts, signature })
+      })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'create failed')
+      show({ text: 'Listing created', kind: 'success' })
+      setListPrice(''); setListQty('')
+      await loadListings(selected)
+    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+    finally { setCreateListingLoading(false) }
+  }
+
+  async function handleCancelListing(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    try{
+      const ts = Date.now()
+      const msg = `listing:cancel\nid=${id}\nseller=${me}\nts=${ts}`
+      const signature = await signMessageIfPossible(msg)
+      const r = await fetch(`${backend}/api/listings/${id}/cancel`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-wallet': me }, body: JSON.stringify({ ts, signature }) })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'cancel failed')
+      show({ text: 'Listing canceled', kind: 'success' })
+      if (selected) await loadListings(selected)
+    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+  }
+
+  async function handleFillListing(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    const q = Number(fillQtyById[id] || '0')
+    if (!Number.isFinite(q) || q <= 0) { show({ text: 'Enter a valid quantity', kind: 'error' }); return }
+    const qtyBase = Math.round(q * 1_000_000)
+    setFillLoadingId(id)
+    try{
+      const ts = Date.now()
+      const msg = `listing:fill\nid=${id}\nbuyer=${me}\nqty=${qtyBase}\nts=${ts}`
+      const signature = await signMessageIfPossible(msg)
+      const r = await fetch(`${backend}/api/listings/${id}/fill`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-wallet': me }, body: JSON.stringify({ qty: String(qtyBase), ts, signature }) })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'fill failed')
+      show({ text: 'Fill submitted', kind: 'success' })
+      setFillQtyById((m) => ({ ...m, [id]: '' }))
+      if (selected) await loadListings(selected)
+    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+    finally { setFillLoadingId(null) }
+  }
+
+  async function handleDepositListingOnchain(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    try{
+      setDepositLoadingId(id)
+      const r = await fetch(`${backend}/api/listings/${id}/build-create-tx`, { method: 'POST', headers: { 'x-wallet': me } })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'build-create failed')
+      const sig = await sendB64Tx(j.tx)
+      show({ text: 'Deposit shares submitted', href: `https://explorer.solana.com/tx/${sig}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+      setDepositedIds((m) => ({ ...m, [id]: true }))
+      if (selected) await loadListings(selected)
+    }catch(e: any){ 
+      const msg = e?.message || String(e)
+      if (msg.includes('insufficient funds')) {
+        show({ text: 'Insufficient shares. Only wallets that funded this invoice have shares to list.', kind: 'error' })
+      } else {
+        show({ text: msg, kind: 'error' })
+      }
+    } finally { setDepositLoadingId(null) }
+  }
+
+  async function handleFulfillListingOnchain(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    const q = Number(fillQtyById[id] || '0')
+    if (!Number.isFinite(q) || q <= 0) { show({ text: 'Enter a valid quantity', kind: 'error' }); return }
+    const qtyBase = Math.round(q * 1_000_000)
+    setFillLoadingId(id)
+    try{
+      const r = await fetch(`${backend}/api/listings/${id}/build-fulfill-tx`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-wallet': me }, body: JSON.stringify({ qty: String(qtyBase) }) })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'build-fulfill failed')
+      const sig = await sendB64Tx(j.tx)
+      show({ text: 'On-chain fill submitted', href: `https://explorer.solana.com/tx/${sig}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+      setFillQtyById((m) => ({ ...m, [id]: '' }))
+      if (selected) await loadListings(selected)
+    }catch(e: any){ 
+      const msg = e?.message || String(e)
+      if (msg.includes('insufficient funds')){
+        const l = listings.find((x) => x.id === id)
+        const price = l ? Number(l.price) / 1_000_000 : 0
+        const total = price * q
+        show({ text: `Insufficient USDC. You need approximately ${total} USDC (+ fees). Use the faucet or fund your wallet and try again.`, kind: 'error' })
+      } else {
+        show({ text: msg, kind: 'error' })
+      }
+    }
+    finally { setFillLoadingId(null) }
+  }
+
+  async function handleCancelListingOnchain(id: number){
+    if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    const me = walletAdapter.publicKey.toBase58()
+    try{
+      const r = await fetch(`${backend}/api/listings/${id}/build-cancel-tx`, { method: 'POST', headers: { 'x-wallet': me } })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'build-cancel failed')
+      const sig = await sendB64Tx(j.tx)
+      show({ text: 'On-chain cancel submitted', href: `https://explorer.solana.com/tx/${sig}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+      if (selected) await loadListings(selected)
+    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+  }
+
 
   async function handleInitSharesWithWallet(){
     if (!selected) return
@@ -173,6 +502,33 @@ export function Invoices(){
   }
 
 
+  async function loadDetail(id: string){
+    setDetailLoading(true)
+    setDetailError(null)
+    try{
+      const r = await fetch(`${backend}/api/invoice/${id}`)
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'detail failed')
+      setDetail(j.invoice)
+      try{
+        const rr = await fetch(`${backend}/api/invoice/${id}/positions`)
+        const jj = await rr.json()
+        if (jj.ok) setPositions(jj.positions || [])
+      }catch{}
+      try { await loadHistory(id) } catch {}
+      try { await loadListings(id) } catch {}
+      try {
+        const lr = await fetch(`${backend}/api/invoices`)
+        const lj = await lr.json()
+        if (lj.ok && Array.isArray(lj.invoices)){
+          const row = (lj.invoices as InvoiceRow[]).find((x) => x.invoicePk === id)
+          if (row) setDetailDb(row)
+        }
+      } catch {}
+    }catch(e: any){ setDetailError(e?.message || String(e)) }
+    finally{ setDetailLoading(false) }
+  }
+
   useEffect(() => { load() }, [qs])
 
   useEffect(() => {
@@ -181,39 +537,24 @@ export function Invoices(){
     return () => clearInterval(id)
   }, [auto, qs])
 
-  async function loadDetail(id: string){
-    setDetailLoading(true)
-    setDetailError(null)
-    try{
-      const r = await fetch(`${backend}/api/invoice/${id}`)
-      const j = await r.json()
-      if (!j.ok) throw new Error(j.error || 'load detail failed')
-      setDetail(j.invoice)
-      try {
-        const r2 = await fetch(`${backend}/api/invoice/${id}/positions`)
-        const j2 = await r2.json()
-        setPositions(j2.ok ? (j2.positions || []) : [])
-      } catch {
-        setPositions([])
-      }
-    } catch(e: any){
-      setDetailError(e?.message || String(e))
-    } finally {
-      setDetailLoading(false)
-    }
-  }
-
   useEffect(() => {
     if (!selected) return
     loadDetail(selected)
   }, [selected])
 
   useEffect(() => {
+    if (!selected) return
+    const row = items.find((x) => x.invoicePk === selected)
+    if (row) setDetailDb(row)
+  }, [selected, items])
+
+  useEffect(() => {
     if (!selected || !auto) return
-    const id = setInterval(() => loadDetail(selected), 10000)
+    const id = setInterval(() => { loadDetail(selected); loadHistory(selected); loadListings(selected) }, 10000)
     return () => clearInterval(id)
   }, [selected, auto])
 
+  
   return (
     <div style={{ marginTop: 24 }}>
       <h2>Invoices</h2>
@@ -262,7 +603,7 @@ export function Invoices(){
             <h3 style={{ margin: 0 }}>Invoice Detail</h3>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => loadDetail(selected)} disabled={detailLoading}>{detailLoading ? 'Loading...' : 'Refresh'}</button>
-              <button onClick={() => { setSelected(null); setDetail(null); setPositions([]) }}>Close</button>
+              <button onClick={() => { setSelected(null); setDetail(null); setPositions([]); setHistory([]); setListings([]) }}>Close</button>
             </div>
           </div>
           <div style={{ marginTop: 8 }}>
@@ -274,7 +615,7 @@ export function Invoices(){
                 <div>Invoice</div>
                 <div style={{ wordBreak: 'break-all' }}>{selected}</div>
                 <div>Status</div>
-                <div>{detail.status ? Object.keys(detail.status)[0] : 'unknown'}</div>
+                <div>{detailDb?.status || (detail.status ? Object.keys(detail.status)[0] : 'unknown')}</div>
                 <div>Seller</div>
                 <div style={{ wordBreak: 'break-all' }}>{detail.seller || ''}</div>
                 <div>Investor</div>
@@ -287,15 +628,100 @@ export function Invoices(){
                   {(() => { const v = detail.sharesMint; const s = v && v.toBase58 ? v.toBase58() : (v || ''); return s && s !== '11111111111111111111111111111111' ? <a href={`https://solscan.io/address/${s}?cluster=devnet`} target="_blank">View</a> : null })()}
                 </div>
                 <div>Amount</div>
-                <div>{(() => { const v = detail.amount; const s = typeof v === 'string' ? v : v?.toString ? v.toString() : '0'; return Number(s)/1_000_000 })()} USDC</div>
+                <div>{(() => {
+                  const raw = (detailDb?.amount ?? (detail?.amount as any))
+                  if (raw && typeof raw === 'object' && 'toNumber' in raw) return fmt6((raw as any).toNumber())
+                  return fmt6(raw)
+                })()} USDC</div>
                 <div>Funded</div>
-                <div>{(() => { const v = detail.fundedAmount; const s = typeof v === 'string' ? v : v?.toString ? v.toString() : '0'; return Number(s)/1_000_000 })()} USDC</div>
+                <div>{(() => {
+                  const raw = (detailDb?.fundedAmount ?? (detail?.fundedAmount as any))
+                  if (raw && typeof raw === 'object' && 'toNumber' in raw) return fmt6((raw as any).toNumber())
+                  return fmt6(raw)
+                })()} USDC</div>
                 <div>Due Date</div>
-                <div>{(() => { const v = detail.dueDate; const n = typeof v === 'number' ? v : Number(v); if (!isNaN(n)) { try { return new Date(n).toLocaleString() } catch { return String(v) } } return String(v) })()}</div>
+                <div>{fmtDateSmart(detail.dueDate)}</div>
                 <div>Links</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <a href={`https://solscan.io/address/${selected}?cluster=devnet`} target="_blank">Invoice</a>
                   {detail.usdcMint ? <a href={`https://solscan.io/address/${detail.usdcMint}?cluster=devnet`} target="_blank">USDC Mint</a> : null}
+                </div>
+                <div>Listings</div>
+                <div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {(() => {
+                      const me = walletAdapter.publicKey?.toBase58()
+                      const canList = !!me
+                      return (
+                        <>
+                          <input type="number" min="0" step="0.000001" title="Price per share in USDC (6 decimals). Converted to base units on submit." value={listPrice} onChange={(e) => setListPrice(e.target.value)} placeholder="Price (USDC/share)" style={{ width: 160 }} />
+                          <input type="number" min="0" step="0.000001" title="Quantity in shares (6 decimals). Converted to base units on submit." value={listQty} onChange={(e) => setListQty(e.target.value)} placeholder="Qty (shares)" style={{ width: 160 }} />
+                          <button onClick={handleCreateListing} disabled={!canList || createListingLoading}>{createListingLoading ? 'Creating...' : 'Create Listing'}</button>
+                          {!canList ? <span style={{ color: '#6b7280' }}>Connect wallet to list shares</span> : null}
+                        </>
+                      )
+                    })()}
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    {listingsLoading ? 'Loading listings...' : (
+                      listings.length === 0 ? 'No listings' : (
+                        <div style={{ display: 'grid', gap: 6 }}>
+                          {listings.map((l) => {
+                            const price = Number(l.price) / 1_000_000
+                            const remain = Number(l.remainingQty) / 1_000_000
+                            const me = walletAdapter.publicKey?.toBase58()
+                            const isMyListing = me === l.seller
+                            const canCancel = isMyListing && l.status === 'Open'
+                            const canFill = l.status === 'Open'
+                            return (
+                              <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', alignItems: 'center', gap: 8 }}>
+                                <div><span style={{ fontFamily: 'monospace' }}>{l.seller}</span> {isMyListing ? <span style={{ color: '#10b981', fontSize: '0.85em' }}>(you)</span> : null}</div>
+                                <div>{price} USDC/share</div>
+                                <div>{remain} shares {l.escrowDeposited ? <span style={{ color: '#6b7280', fontSize: '0.85em' }}>(deposited)</span> : null}</div>
+                                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                  {canCancel ? <button onClick={() => handleCancelListing(l.id)}>Cancel</button> : null}
+                                  {!allowanceEnabled && canCancel && !depositedIds[l.id] && !l.escrowDeposited ? (
+                                    <button onClick={() => handleDepositListingOnchain(l.id)} disabled={depositLoadingId === l.id}>{depositLoadingId === l.id ? 'Depositing...' : 'Deposit Shares'}</button>
+                                  ) : null}
+                                  {allowanceEnabled && isMyListing && l.status === 'Open' && !l.onChain ? (
+                                    <button onClick={() => handleInitListingV2(l.id)} disabled={initV2LoadingId === l.id}>{initV2LoadingId === l.id ? 'Initializing...' : 'Init On-chain (V2)'}</button>
+                                  ) : null}
+                                  {allowanceEnabled && isMyListing && l.status === 'Open' ? (
+                                    <button onClick={() => handleApproveSharesV2(l.id)} disabled={approveSharesLoadingId === l.id}>{approveSharesLoadingId === l.id ? 'Approving...' : 'Approve Shares'}</button>
+                                  ) : null}
+                                  {allowanceEnabled && isMyListing && l.status === 'Open' ? (
+                                    <button onClick={() => handleRevokeSharesV2(l.id)}>Revoke Shares</button>
+                                  ) : null}
+                                  {allowanceEnabled && isMyListing && l.status === 'Open' ? (
+                                    <button onClick={() => handleCancelListingOnchainV2(l.id)}>Cancel On-chain (V2)</button>
+                                  ) : null}
+                                  {canFill ? (
+                                    <>
+                                      <input type="number" min="0" step="0.000001" title="Quantity to buy in shares (6 decimals)." value={fillQtyById[l.id] || ''} onChange={(e) => setFillQtyById((m) => ({ ...m, [l.id]: e.target.value }))} placeholder="Qty (shares)" style={{ width: 100 }} />
+                                      {allowanceEnabled ? (
+                                        <>
+                                          <button onClick={() => handleApproveUsdcV2(l.id)} disabled={approveUsdcLoadingId === l.id}>{approveUsdcLoadingId === l.id ? 'Approving...' : 'Approve USDC'}</button>
+                                          <button onClick={() => handleRevokeUsdcV2(l.id)}>Revoke USDC</button>
+                                          <button onClick={() => handleFulfillListingOnchainV2(l.id)} disabled={fillLoadingId === l.id}>{fillLoadingId === l.id ? 'Filling...' : 'Fill On-chain (V2)'}</button>
+                                        </>
+                                      ) : (
+                                        <button onClick={() => handleFulfillListingOnchain(l.id)} disabled={fillLoadingId === l.id}>{fillLoadingId === l.id ? 'Filling...' : 'Fill On-chain'}</button>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span>{l.status}</span>
+                                      {canCancel ? <button onClick={() => handleCancelListingOnchain(l.id)}>Cancel On-chain</button> : null}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    )}
+                  </div>
                 </div>
                 <div>Fractional</div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -312,7 +738,7 @@ export function Invoices(){
                                 setFxError(null)
                                 setInitLoading(true)
                                 try{
-                                  const r = await fetch(`${backend}/api/invoice/${selected}/init-shares`, { method: 'POST' })
+                                  const r = await fetch(`${backend}/api/invoice/${selected}/init-shares`, { method: 'POST', headers: { ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) } })
                                   const j = await r.json()
                                   if (!j.ok) throw new Error(j.error || 'init failed')
                                   show({ text: 'Init shares submitted', href: `https://explorer.solana.com/tx/${j.tx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
@@ -332,6 +758,10 @@ export function Invoices(){
                     return (
                       <>
                         <input
+                          type="number"
+                          min="0"
+                          step="0.000001"
+                          title="Amount in USDC (6 decimals). Converted to base units on submit."
                           value={fracAmount}
                           onChange={(e) => setFracAmount(e.target.value)}
                           placeholder="Amount (USDC)"
@@ -349,7 +779,7 @@ export function Invoices(){
                               try{
                                 const r = await fetch(`${backend}/api/invoice/${selected}/fund-fractional`, {
                                   method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
+                                  headers: { 'Content-Type': 'application/json', ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) },
                                   body: JSON.stringify({ amount: String(base) })
                                 })
                                 const j = await r.json()
@@ -376,15 +806,38 @@ export function Invoices(){
                   {positions.length === 0 ? (
                     <span>None</span>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', rowGap: 4 }}>
-                      <div style={{ fontWeight: 600 }}>Wallet</div>
-                      <div style={{ fontWeight: 600 }}>Amount</div>
-                      {positions.map((p) => (
-                        <React.Fragment key={p.wallet}>
-                          <div style={{ wordBreak: 'break-all' }}>{p.wallet}</div>
-                          <div>{(() => { const s = String(p.amount); return Number(s)/1_000_000 })()} USDC</div>
-                        </React.Fragment>
+                    <div style={{ display: 'grid', gap: 4 }}>
+                      {positions.map(p => (
+                        <div key={p.wallet} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span style={{ fontFamily: 'monospace' }}>{p.wallet}</span>
+                          <span>—</span>
+                          <span>{Number(p.amount)/1_000_000} shares</span>
+                        </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+                <div>Positions History</div>
+                <div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button onClick={() => selected && loadHistory(selected)} disabled={historyLoading}>{historyLoading ? 'Loading...' : 'Refresh history'}</button>
+                  </div>
+                  {history.length === 0 ? (
+                    <div style={{ marginTop: 4 }}>No recent changes</div>
+                  ) : (
+                    <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+                      {history.map((h: { wallet: string; delta: string; newAmount: string; ts: number }, i: number) => {
+                        const delta = (() => { try { const n = Number(h.delta)/1_000_000; return (n>=0?'+':'') + n.toLocaleString(undefined,{maximumFractionDigits:6}) } catch { return h.delta } })()
+                        const na = (() => { try { const n = Number(h.newAmount)/1_000_000; return n.toLocaleString(undefined,{maximumFractionDigits:6}) } catch { return h.newAmount } })()
+                        const when = new Date(h.ts).toLocaleString()
+                        return (
+                          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                            <span style={{ fontFamily: 'monospace' }}>{h.wallet}</span>
+                            <span>Δ {delta} → {na}</span>
+                            <span style={{ color: '#6b7280' }}>{when}</span>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
