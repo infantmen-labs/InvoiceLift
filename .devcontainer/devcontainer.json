@@ -1,0 +1,18 @@
+{
+  "name": "InvoiceLift Dev",
+  "image": "mcr.microsoft.com/devcontainers/base:debian",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "18"
+    }
+  },
+  "postCreateCommand": "sudo apt-get update -y && sudo apt-get install -y python3 g++ make && npm ci --prefix backend && npm ci --prefix app",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  }
+}

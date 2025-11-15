@@ -89,6 +89,35 @@ export function initDb(customPath?: string){
     CREATE INDEX IF NOT EXISTS idx_listings_invoice ON listings(invoice_pk);
     CREATE INDEX IF NOT EXISTS idx_listings_seller ON listings(seller);
     CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);
+    
+    CREATE TABLE IF NOT EXISTS kyc_records (
+      wallet TEXT PRIMARY KEY,
+      status TEXT,
+      provider TEXT,
+      reference TEXT,
+      payload TEXT,
+      created_at INTEGER,
+      updated_at INTEGER
+    );
+    
+    CREATE TABLE IF NOT EXISTS doc_hashes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_pk TEXT,
+      uploader TEXT,
+      hash TEXT,
+      cid TEXT,
+      created_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_doc_hashes_invoice ON doc_hashes(invoice_pk);
+    
+    CREATE TABLE IF NOT EXISTS credit_scores (
+      invoice_pk TEXT PRIMARY KEY,
+      score INTEGER,
+      risk_label TEXT,
+      reason TEXT,
+      created_at INTEGER,
+      updated_at INTEGER
+    );
   `)
   // Backfill migration: add shares_mint if missing
   try {
@@ -393,3 +422,113 @@ export function listOpenListings(limit: number = 200): Listing[] {
   return (rows || []).map(mapListingRow).filter(Boolean) as Listing[]
 }
 
+// --- Phase 3: Verification & Trust helpers ---
+export type KycRecord = {
+  wallet: string
+  status: string
+  provider: string | null
+  reference: string | null
+  payload: any | null
+  createdAt: number
+  updatedAt: number
+}
+
+function mapKycRow(row: any): KycRecord | null {
+  if (!row) return null
+  return {
+    wallet: row.wallet,
+    status: row.status,
+    provider: row.provider || null,
+    reference: row.reference || null,
+    payload: row.payload ? JSON.parse(row.payload) : null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function upsertKycRecord(input: { wallet: string; status: string; provider?: string | null; reference?: string | null; payload?: any | null }): KycRecord {
+  const db = getDb()
+  const ts = nowMs()
+  db.prepare('INSERT INTO kyc_records (wallet, status, provider, reference, payload, created_at, updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(wallet) DO UPDATE SET status=excluded.status, provider=excluded.provider, reference=excluded.reference, payload=excluded.payload, updated_at=excluded.updated_at')
+    .run(input.wallet, input.status, input.provider || null, input.reference || null, input.payload ? JSON.stringify(input.payload) : null, ts, ts)
+  const row = db.prepare('SELECT * FROM kyc_records WHERE wallet = ?').get(input.wallet)
+  return mapKycRow(row) as KycRecord
+}
+
+export function getKycRecord(wallet: string): KycRecord | null {
+  const db = getDb()
+  const row = db.prepare('SELECT * FROM kyc_records WHERE wallet = ?').get(wallet)
+  return mapKycRow(row)
+}
+
+export type DocHash = {
+  id: number
+  invoicePk: string
+  uploader: string
+  hash: string
+  cid: string | null
+  createdAt: number
+}
+
+function mapDocRow(row: any): DocHash | null {
+  if (!row) return null
+  return {
+    id: row.id,
+    invoicePk: row.invoice_pk,
+    uploader: row.uploader,
+    hash: row.hash,
+    cid: row.cid || null,
+    createdAt: row.created_at,
+  }
+}
+
+export function insertDocHash(input: { invoicePk: string; uploader: string; hash: string; cid?: string | null }): DocHash {
+  const db = getDb()
+  const ts = nowMs()
+  const info = db.prepare('INSERT INTO doc_hashes (invoice_pk, uploader, hash, cid, created_at) VALUES (?,?,?,?,?)').run(input.invoicePk, input.uploader, input.hash, input.cid || null, ts)
+  const id = Number(info.lastInsertRowid)
+  const row = db.prepare('SELECT * FROM doc_hashes WHERE id = ?').get(id)
+  return mapDocRow(row) as DocHash
+}
+
+export function listDocHashes(invoicePk: string): DocHash[] {
+  const db = getDb()
+  const rows = db.prepare('SELECT * FROM doc_hashes WHERE invoice_pk = ? ORDER BY created_at DESC LIMIT 200').all(invoicePk)
+  return (rows || []).map(mapDocRow).filter(Boolean) as DocHash[]
+}
+
+export type CreditScore = {
+  invoicePk: string
+  score: number
+  riskLabel: string
+  reason: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+function mapScoreRow(row: any): CreditScore | null {
+  if (!row) return null
+  return {
+    invoicePk: row.invoice_pk,
+    score: Number(row.score || 0),
+    riskLabel: row.risk_label,
+    reason: row.reason || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function upsertCreditScore(input: { invoicePk: string; score: number; riskLabel: string; reason?: string | null }): CreditScore {
+  const db = getDb()
+  const ts = nowMs()
+  db.prepare('INSERT INTO credit_scores (invoice_pk, score, risk_label, reason, created_at, updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(invoice_pk) DO UPDATE SET score=excluded.score, risk_label=excluded.risk_label, reason=excluded.reason, updated_at=excluded.updated_at')
+    .run(input.invoicePk, input.score, input.riskLabel, input.reason || null, ts, ts)
+  const row = db.prepare('SELECT * FROM credit_scores WHERE invoice_pk = ?').get(input.invoicePk)
+  return mapScoreRow(row) as CreditScore
+}
+
+export function getCreditScore(invoicePk: string): CreditScore | null {
+  const db = getDb()
+  const row = db.prepare('SELECT * FROM credit_scores WHERE invoice_pk = ?').get(invoicePk)
+  return mapScoreRow(row)
+}

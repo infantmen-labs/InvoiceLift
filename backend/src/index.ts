@@ -11,7 +11,10 @@ import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, getMint, createApproveChec
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { resolve } from 'path';
-import { initDb, upsertInvoiceFromChain, saveTxLog, getInvoiceRow, listInvoices, hasIdempotencyKey, recordWebhookEvent, markWebhookProcessed, getPositionsCache, setPositionsCache, clearPositionsCache, getPositionsHistory, listInvoicesWithSharesMint, createListing, getListing, listListingsByInvoice, listListingsBySeller, cancelListing, fillListingPartial, listOpenListings } from './db';
+import { initDb, upsertInvoiceFromChain, saveTxLog, getInvoiceRow, listInvoices, hasIdempotencyKey, recordWebhookEvent, markWebhookProcessed, getPositionsCache, setPositionsCache, clearPositionsCache, getPositionsHistory, listInvoicesWithSharesMint, createListing, getListing, listListingsByInvoice, listListingsBySeller, cancelListing, fillListingPartial, listOpenListings, upsertKycRecord, getKycRecord, insertDocHash, listDocHashes, upsertCreditScore, getCreditScore } from './db';
+import { logger } from './logger';
+import { validateConfig } from './config';
+import { KycSchema, DocSchema, ScoreSchema, WebhookPaymentSchema, ListingCreateSchema, ListingCancelSchema, ListingFillSchema } from './validation';
 import { runIndexer } from './indexer';
 
 const app = express();
@@ -21,9 +24,12 @@ app.use(bodyParser.json({
   }
 }));
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
+app.use((req, _res, next) => { try { logger.info({ method: req.method, path: req.path }, 'req'); } catch {} next(); });
 
 // Initialize SQLite database
 initDb();
+const conf = validateConfig();
+logger.info({ env: conf.env, issues: conf.issues.length }, 'config validated');
 
 // Admin gating for backend-mode endpoints
 const ADMIN_WALLETS = String(process.env.ADMIN_WALLETS || '')
@@ -549,7 +555,9 @@ app.get('/api/listings', async (req: Request, res: Response) => {
 // Security note: signature verification to be added; for now require x-wallet header to match seller
 app.post('/api/listings', async (req: Request, res: Response) => {
   try {
-    const { invoicePk, seller, price, qty, signature, ts } = req.body as { invoicePk: string; seller: string; price: string; qty: string; signature?: string | null; ts?: number };
+    const parsed0 = ListingCreateSchema.safeParse(req.body)
+    if (!parsed0.success) return res.status(400).json({ ok: false, error: parsed0.error.errors?.[0]?.message || 'invalid body' });
+    const { invoicePk, seller, price, qty, signature, ts } = parsed0.data as { invoicePk: string; seller: string; price: string; qty: string; signature?: string | null; ts?: number };
     const headerWallet = String(req.header('x-wallet') || '');
     if (!invoicePk || !seller || !price || !qty) return res.status(400).json({ ok: false, error: 'missing fields' });
     if (!headerWallet || headerWallet !== seller) return res.status(403).json({ ok: false, error: 'wallet mismatch' });
@@ -572,7 +580,9 @@ app.post('/api/listings/:id/cancel', async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: 'bad id' });
     const headerWallet = String(req.header('x-wallet') || '');
-    const { signature, ts } = (req.body || {}) as { signature?: string; ts?: number };
+    const parsed0 = ListingCancelSchema.safeParse(req.body || {})
+    if (!parsed0.success) return res.status(400).json({ ok: false, error: parsed0.error.errors?.[0]?.message || 'invalid body' });
+    const { signature, ts } = parsed0.data as { signature?: string; ts?: number };
     const listing = getListing(id);
     if (!listing) return res.status(404).json({ ok: false, error: 'not found' });
     if (!headerWallet || headerWallet !== listing.seller) return res.status(403).json({ ok: false, error: 'wallet mismatch' });
@@ -594,7 +604,9 @@ app.post('/api/listings/:id/fill', async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: 'bad id' });
-    const { qty, signature, ts } = req.body as { qty: string; signature?: string; ts?: number };
+    const parsed0 = ListingFillSchema.safeParse(req.body)
+    if (!parsed0.success) return res.status(400).json({ ok: false, error: parsed0.error.errors?.[0]?.message || 'invalid body' });
+    const { qty, signature, ts } = parsed0.data as { qty: string; signature?: string; ts?: number };
     const buyer = String(req.header('x-wallet') || '');
     if (!buyer) return res.status(403).json({ ok: false, error: 'buyer wallet required' });
     if (!qty) return res.status(400).json({ ok: false, error: 'qty required' });
@@ -715,6 +727,90 @@ app.get('/api/invoices', async (req: Request, res: Response) => {
     const { status, wallet } = req.query as { status?: string; wallet?: string };
     const rows = listInvoices({ status, wallet });
     res.status(200).json({ ok: true, invoices: rows });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+// Phase 3: KYC (stub) — admin writes, public read
+app.post('/api/kyc', async (req: Request, res: Response) => {
+  try {
+    if (!isAdminReq(req)) return res.status(403).json({ ok: false, error: 'admin only' });
+    const parsed = KycSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.errors?.[0]?.message || 'invalid body' });
+    const { wallet, status, provider, reference, payload } = parsed.data;
+    const rec = upsertKycRecord({ wallet, status, provider: provider || null, reference: reference || null, payload: payload ?? null });
+    res.status(200).json({ ok: true, kyc: rec });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+app.get('/api/kyc/:wallet', async (req: Request, res: Response) => {
+  try {
+    const rec = getKycRecord(String(req.params.wallet));
+    if (!rec) return res.status(404).json({ ok: false, error: 'not found' });
+    res.status(200).json({ ok: true, kyc: rec });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+// Phase 3: Document hashes (hash + optional CID)
+app.post('/api/invoice/:id/document', async (req: Request, res: Response) => {
+  try {
+    if (!isAdminReq(req)) return res.status(403).json({ ok: false, error: 'admin only' });
+    const invoicePk = String(req.params.id);
+    const parsed = DocSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.errors?.[0]?.message || 'invalid body' });
+    const { uploader, hash, cid } = parsed.data;
+    const up = uploader || String(req.header('x-admin-wallet') || '');
+    if (!invoicePk || !hash || !up) return res.status(400).json({ ok: false, error: 'invoicePk, uploader, hash required' });
+    const isHex64 = typeof hash === 'string' && /^[0-9a-fA-F]{64}$/.test(hash);
+    if (!isHex64) return res.status(400).json({ ok: false, error: 'hash must be 64-char hex (sha256)' });
+    try {
+      const existing = listDocHashes(invoicePk);
+      if (existing.length >= 10) return res.status(400).json({ ok: false, error: 'max 10 documents per invoice' });
+    } catch {}
+    const rec = insertDocHash({ invoicePk, uploader: up, hash, cid: cid || null });
+    res.status(200).json({ ok: true, document: rec });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+app.get('/api/invoice/:id/documents', async (req: Request, res: Response) => {
+  try {
+    const invoicePk = String(req.params.id);
+    const rows = listDocHashes(invoicePk);
+    res.status(200).json({ ok: true, documents: rows });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+// (mock rules service)
+app.post('/api/invoice/:id/score', async (req: Request, res: Response) => {
+  try {
+    if (!isAdminReq(req)) return res.status(403).json({ ok: false, error: 'admin only' });
+    const invoicePk = String(req.params.id);
+    const parsed = ScoreSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.errors?.[0]?.message || 'invalid body' });
+    const num = Number(parsed.data.score);
+    const riskLabel = num >= 700 ? 'Low' : num >= 600 ? 'Medium' : 'High';
+    const rec = upsertCreditScore({ invoicePk, score: num, riskLabel, reason: parsed.data.reason || null });
+    res.status(200).json({ ok: true, score: rec });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+app.get('/api/invoice/:id/score', async (req: Request, res: Response) => {
+  try {
+    const invoicePk = String(req.params.id);
+    const rec = getCreditScore(invoicePk);
+    if (!rec) return res.status(404).json({ ok: false, error: 'not found' });
+    res.status(200).json({ ok: true, score: rec });
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e?.message || String(e) });
   }
@@ -914,7 +1010,9 @@ app.post('/webhook/payment', async (req: Request, res: Response) => {
     //   const calc = crypto.createHmac('sha256', secret).update(JSON.stringify(req.body)).digest('hex');
     //   if (!provided || provided !== calc) return res.status(401).json({ ok: false, error: 'bad signature' });
     // }
-    const { invoice_id, amount } = req.body as { invoice_id: string; amount: string | number };
+    const parsed = WebhookPaymentSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.errors?.[0]?.message || 'invalid body' });
+    const { invoice_id, amount } = parsed.data as { invoice_id: string; amount: string | number };
     const program = getProgram();
     const invoicePk = new web3.PublicKey(invoice_id);
     const bn = new BN(String(amount));
@@ -929,6 +1027,46 @@ app.post('/webhook/payment', async (req: Request, res: Response) => {
       const { invoice_id } = (req.body || {}) as any;
       if (invoice_id) saveTxLog({ sig: '', kind: 'settle', invoicePk: String(invoice_id), success: false, error: e?.message });
     } catch {}
+    res.status(400).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+app.post('/webhook/kyc', async (req: Request, res: Response) => {
+  try {
+    const enforce = process.env.ENABLE_HMAC === 'true';
+    if (enforce) {
+      const secret = process.env.HMAC_SECRET;
+      const provided = req.header('x-hmac-signature') || '';
+      const tsHeader = req.header('x-hmac-timestamp');
+      if (!secret) return res.status(401).json({ ok: false, error: 'missing secret' });
+      if (!tsHeader) return res.status(401).json({ ok: false, error: 'missing timestamp' });
+      const ts = Number(tsHeader);
+      if (!Number.isFinite(ts)) return res.status(401).json({ ok: false, error: 'invalid timestamp' });
+      const toleranceSec = Number(process.env.WEBHOOK_TOLERANCE_SEC ?? '300');
+      if (Math.abs(Date.now() - ts) > toleranceSec * 1000) return res.status(401).json({ ok: false, error: 'timestamp out of tolerance' });
+      const bodyStr = (req as any).rawBody || JSON.stringify(req.body);
+      const preimage = `${ts}.${bodyStr}`;
+      const calc = crypto.createHmac('sha256', secret).update(preimage).digest('hex');
+      if (!provided || provided !== calc) return res.status(401).json({ ok: false, error: 'bad signature' });
+
+      const idem = req.header('x-idempotency-key') || '';
+      if (idem) {
+        const existing = hasIdempotencyKey(idem);
+        if (existing.exists && existing.processed) {
+          return res.status(200).json({ ok: true, idempotent: true });
+        }
+        const payloadHash = crypto.createHash('sha256').update(bodyStr).digest('hex');
+        recordWebhookEvent({ idemKey: idem, ts, sig: provided, payloadHash });
+      }
+    }
+
+    const { wallet, status, provider, reference, payload } = req.body as { wallet: string; status: string; provider?: string; reference?: string; payload?: any };
+    if (!wallet || !status) return res.status(400).json({ ok: false, error: 'wallet and status required' });
+    const rec = upsertKycRecord({ wallet, status, provider: provider || null, reference: reference || null, payload: payload ?? null });
+    const idem = req.header('x-idempotency-key') || '';
+    if (idem) { try { markWebhookProcessed(idem); } catch {} }
+    res.status(200).json({ ok: true, kyc: rec });
+  } catch (e: any) {
     res.status(400).json({ ok: false, error: e?.message || String(e) });
   }
 });

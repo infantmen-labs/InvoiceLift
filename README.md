@@ -24,11 +24,19 @@ HMAC_SECRET=<replace-with-strong-secret>
 ENABLE_HMAC=true
 # Optional: webhook timestamp tolerance in seconds (default 300)
 WEBHOOK_TOLERANCE_SEC=300
- CORS_ORIGIN=http://localhost:5173
- # Optional: override SQLite DB path (tests/CI)
- # DB_PATH=./data/dev.sqlite
- # Dev-only faucet; set to true to enable
- FAUCET_ENABLED=false
+# CORS
+CORS_ORIGIN=http://localhost:5173
+
+# Listings signatures
+# Default is true; set to 'false' to disable verification
+LISTINGS_REQUIRE_SIG=true
+LISTING_SIG_TOL_SEC=300
+ADMIN_WALLETS=
+
+# Optional: override SQLite DB path (tests/CI)
+# DB_PATH=./data/dev.sqlite
+# Dev-only faucet; set to true to enable
+FAUCET_ENABLED=false
 ```
 
 ### Marketplace Listings: Env flags and signatures
@@ -168,10 +176,17 @@ npm run dev
 curl http://localhost:8080/healthz
 ```
 
+### Tests
+```
+cd backend
+npm test
+```
+
 ### Database & Indexer
 - SQLite file at `backend/data/dev.sqlite` is created on first run.
 - No external DB required in dev. Delete the file to reset state.
 - A lightweight indexer seeds and syncs invoices from chain every 30s.
+- SPL transfer subscription for `shares_mint` updates the positions cache and activity feed in near real-time.
 
 ### API Endpoints
 - POST /api/invoice/mint
@@ -225,6 +240,45 @@ curl http://localhost:8080/idl/invoice_manager
   - `POST /api/listings/:id/build-cancel-v2-tx`
   - `POST /api/listings/:id/build-revoke-shares`
   - `POST /api/listings/:id/build-revoke-usdc`
+
+#### Verification & Trust
+
+- Admin writes require header `x-admin-wallet` matching one of `ADMIN_WALLETS`.
+- Reads are public.
+
+- KYC
+  - `POST /api/kyc` (admin)
+    - Body: `{ "wallet": "<B58>", "status": "approved|review|rejected", "provider?": "string", "reference?": "string", "payload?": { ... } }`
+  - `GET /api/kyc/:wallet`
+    - Returns `{ ok, kyc }` or 404 if not found
+
+- Documents (hash + optional CID)
+  - `POST /api/invoice/:id/document` (admin)
+    - Body: `{ "hash": "<64-hex-sha256>", "uploader?": "<B58>", "cid?": "string" }`
+    - Validation: `hash` must be 64-char hex; max 10 documents per invoice
+  - `GET /api/invoice/:id/documents`
+
+  Example:
+  ```
+  curl -X POST http://localhost:8080/api/invoice/11111111111111111111111111111111/document \
+    -H "Content-Type: application/json" \
+    -H "x-admin-wallet: <ADMIN_B58>" \
+    -d '{"hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","cid":"bafy..."}'
+  ```
+
+- Credit Score (mock rules)
+  - `POST /api/invoice/:id/score` (admin)
+    - Body: `{ "score": <number>, "reason?": "string" }`
+    - Risk label auto-derived: `>=700 -> Low`, `600-699 -> Medium`, `<600 -> High`
+  - `GET /api/invoice/:id/score`
+
+  Example:
+  ```
+  curl -X POST http://localhost:8080/api/invoice/11111111111111111111111111111111/score \
+    -H "Content-Type: application/json" \
+    -H "x-admin-wallet: <ADMIN_B58>" \
+    -d '{"score": 680, "reason": "demo"}'
+  ```
 - POST /api/faucet/usdc (dev only; mints USDC to a wallet)
 ```
 curl -X POST http://localhost:8080/api/faucet/usdc \
@@ -250,11 +304,28 @@ curl -X POST http://localhost:8080/webhook/payment \
   -d "$BODY"
 ```
 
+- POST /webhook/kyc (HMAC)
+```
+# Enable HMAC by setting ENABLE_HMAC=true in backend/.env
+# Timestamped HMAC with idempotency (same scheme as payment webhook)
+TS=$(node -e "console.log(Date.now())")
+BODY='{"wallet":"<WALLET_B58>","status":"approved","provider":"sandbox","reference":"ref-1"}'
+PREIMAGE="$TS.$BODY"
+SIG=$(echo -n $PREIMAGE | openssl dgst -sha256 -hmac "$HMAC_SECRET" -r | awk '{print $1}')
+curl -X POST http://localhost:8080/webhook/kyc \
+  -H "Content-Type: application/json" \
+  -H "x-hmac-timestamp: $TS" \
+  -H "x-hmac-signature: $SIG" \
+  -H "x-idempotency-key: demo-kyc-$TS" \
+  -d "$BODY"
+```
+
 ## Frontend (Vite + React)
 1) Configure app/.env:
 ```
 VITE_BACKEND_URL=http://localhost:8080
 VITE_FEATURE_ALLOWANCE_FILLS=true
+VITE_ADMIN_WALLETS=<ADMIN_B58_1>,<ADMIN_B58_2>
 ```
 2) Install and run:
 ```
@@ -273,6 +344,12 @@ npm run dev
     - Seller: Init On-chain (V2), Approve Shares
     - Buyer: Approve USDC, Fill On-chain (V2)
   - Else, show escrow deposit + Fill On-chain (V1) fallback.
+
+Admin UI:
+- If your connected wallet is listed in `VITE_ADMIN_WALLETS`, an Admin section appears at the bottom of the page with:
+  - KYC editor and lookup (`POST /api/kyc`, `GET /api/kyc/:wallet`)
+  - Document hash add and list (`POST /api/invoice/:id/document`, `GET /api/invoice/:id/documents`)
+  - Credit score add and lookup (`POST /api/invoice/:id/score`, `GET /api/invoice/:id/score`)
 
 ## Demo Scripts
 - JavaScript (recommended, Node 18+):

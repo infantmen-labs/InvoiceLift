@@ -5,6 +5,7 @@ import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { Invoices } from './pages/Invoices';
 import { Portfolio } from './pages/Portfolio';
 import { Marketplace } from './pages/Marketplace';
+import { Admin } from './pages/Admin';
 import { SignerModeProvider, useSignerMode } from './state/signerMode';
 import { ToastProvider } from './components/Toast';
 
@@ -62,6 +63,8 @@ export default function App(){
             <Portfolio />
             <div style={{ height: 16 }} />
             <Marketplace />
+            <div style={{ height: 16 }} />
+            <Admin />
           </div>
         </SignerModeProvider>
       </ToastProvider>
