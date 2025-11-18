@@ -257,11 +257,11 @@ curl -X POST http://localhost:8080/api/invoice/<INVOICE>/fund \
 ```
 curl http://localhost:8080/api/invoice/<INVOICE>
 ```
-- POST /api/invoice/{invoiceId}/init-shares (Phase 2B)
+- POST /api/invoice/{invoiceId}/init-shares
 ```
 curl -X POST http://localhost:8080/api/invoice/<INVOICE>/init-shares
 ```
-- POST /api/invoice/{invoiceId}/fund-fractional (Phase 2B)
+- POST /api/invoice/{invoiceId}/fund-fractional
 ```
 curl -X POST http://localhost:8080/api/invoice/<INVOICE>/fund-fractional \
   -H "Content-Type: application/json" \
@@ -340,6 +340,7 @@ Requires `FAUCET_ENABLED=true`.
 # Timestamped HMAC with idempotency:
 #   preimage = "<ts_ms>." + JSON.stringify(body)
 #   signature = hex(hmac_sha256(HMAC_SECRET, preimage))
+# Note: the backend uses the on-chain fundedAmount and ignores BODY.amount when calling set_settled.
 TS=$(node -e "console.log(Date.now())")
 BODY='{"invoice_id":"<INVOICE>","amount":"5000000"}'
 PREIMAGE="$TS.$BODY"
