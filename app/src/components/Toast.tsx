@@ -30,23 +30,36 @@ export function ToastProvider({ children }: { children: React.ReactNode }){
   return (
     <Ctx.Provider value={value}>
       {children}
-      <div style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 1000, display: 'grid', gap: 8 }}>
-        {toasts.map((t) => (
-          <div key={t.id} style={{
-            background: t.kind === 'error' ? '#fee2e2' : t.kind === 'success' ? '#ecfdf5' : '#f3f4f6',
-            color: '#111827',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-            borderRadius: 8,
-            padding: '10px 12px',
-            maxWidth: 420,
-            wordBreak: 'break-word'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
-              <div style={{ fontSize: 14 }}>{t.text}</div>
-              {t.href ? <a style={{ fontSize: 12 }} href={t.href} target="_blank" rel="noreferrer">{t.linkText || 'View'}</a> : null}
+      <div className="pointer-events-none fixed top-4 right-4 z-50 flex flex-col gap-2">
+        {toasts.map((t) => {
+          const base = 'pointer-events-auto max-w-sm rounded-lg border px-3 py-2 shadow-md bg-white text-sm'
+          const kind =
+            t.kind === 'error'
+              ? 'border-danger/40 bg-red-50 text-danger'
+              : t.kind === 'success'
+              ? 'border-success/40 bg-emerald-50 text-success'
+              : 'border-slate-200 bg-slate-50 text-slate-900'
+          return (
+            <div
+              key={t.id}
+              className={[base, kind].join(' ')}
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="text-sm leading-snug">{t.text}</div>
+                {t.href ? (
+                  <a
+                    href={t.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-medium text-brand hover:text-brand-dark"
+                  >
+                    {t.linkText || 'View'}
+                  </a>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </Ctx.Provider>
   )

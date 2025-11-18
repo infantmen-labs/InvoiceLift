@@ -1,13 +1,14 @@
 import React from 'react';
+import { Routes, Route } from 'react-router-dom';
 import { MintInvoice } from './pages/MintInvoice';
 import { FundInvoice } from './pages/FundInvoice';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { Invoices } from './pages/Invoices';
 import { Portfolio } from './pages/Portfolio';
 import { Marketplace } from './pages/Marketplace';
 import { Admin } from './pages/Admin';
-import { SignerModeProvider, useSignerMode } from './state/signerMode';
+import { SignerModeProvider } from './state/signerMode';
 import { ToastProvider } from './components/Toast';
+import { MainLayout } from './components/layout/MainLayout';
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
   constructor(props: any) {
@@ -19,53 +20,39 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
   }
   render() {
     if (this.state.hasError) {
-      return <div style={{padding: 24}}><h1>Error</h1><pre>{String(this.state.error)}</pre></div>;
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
+          <div className="max-w-lg rounded-xl border border-red-500/40 bg-red-950/40 p-6 shadow-lg">
+            <h1 className="text-lg font-semibold text-red-200 mb-2">Unexpected error</h1>
+            <p className="mb-2 text-sm text-red-100">The UI crashed. Refresh the page or check the console for details.</p>
+            <pre className="mt-2 max-h-64 overflow-auto rounded bg-black/60 p-3 text-xs text-red-200">
+              {String(this.state.error)}
+            </pre>
+          </div>
+        </div>
+      );
     }
     return this.props.children;
   }
 }
 
 export default function App(){
-  function SignerToggle(){
-    const { mode, setMode, isAdmin } = useSignerMode();
-    return (
-      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        <span>Signer:</span>
-        {isAdmin ? (
-          <select value={mode} onChange={(e) => setMode(e.target.value as any)}>
-            <option value="backend">Backend</option>
-            <option value="wallet">Wallet</option>
-          </select>
-        ) : (
-          <span>Wallet</span>
-        )}
-      </div>
-    );
-  }
   return (
     <ErrorBoundary>
       <ToastProvider>
         <SignerModeProvider>
-          <div style={{ padding: 24, maxWidth: 720, margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-              <h1>InvoiceLift</h1>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                <SignerToggle />
-                <WalletMultiButton />
-              </div>
-            </div>
-            <p>Devnet PoC UI (stubs)</p>
-            <MintInvoice />
-            <div style={{ height: 16 }} />
-            <FundInvoice />
-            <Invoices />
-            <div style={{ height: 16 }} />
-            <Portfolio />
-            <div style={{ height: 16 }} />
-            <Marketplace />
-            <div style={{ height: 16 }} />
-            <Admin />
-          </div>
+          <MainLayout>
+            <Routes>
+              <Route path="/" element={<Invoices />} />
+              <Route path="/invoices" element={<Invoices />} />
+              <Route path="/invoice/:id" element={<Invoices />} />
+              <Route path="/marketplace" element={<Marketplace />} />
+              <Route path="/portfolio" element={<Portfolio />} />
+              <Route path="/admin" element={<Admin />} />
+              <Route path="/mint" element={<MintInvoice />} />
+              <Route path="/fund" element={<FundInvoice />} />
+            </Routes>
+          </MainLayout>
         </SignerModeProvider>
       </ToastProvider>
     </ErrorBoundary>

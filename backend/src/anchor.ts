@@ -162,10 +162,21 @@ export async function createEscrow(program: Program, invoicePk: web3.PublicKey){
   return sig
 }
 
-export async function settleInvoice(program: Program, invoicePk: web3.PublicKey, amount: BN){
-  const invoice = await fetchInvoice(program, invoicePk)
+export async function settleInvoice(program: Program, invoicePk: web3.PublicKey, _amount: BN){
+  // Always settle exactly the fundedAmount recorded on-chain, ignoring caller-provided amount
+  const invoice: any = await fetchInvoice(program, invoicePk)
+  const fundedAmount = new BN(invoice.fundedAmount?.toString?.() ?? String(invoice.fundedAmount ?? '0'))
+  if (fundedAmount.isZero()) {
+    throw new Error('cannot settle invoice with zero funded amount')
+  }
+
   const usdcMint = new web3.PublicKey((invoice as any).usdcMint)
   const seller = new web3.PublicKey((invoice as any).seller)
+  // Derive global admin config PDA
+  const [configPda] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from('config')],
+    program.programId,
+  )
 
   const [escrowAuthority] = web3.PublicKey.findProgramAddressSync(
     [Buffer.from('escrow'), invoicePk.toBuffer()],
@@ -176,9 +187,10 @@ export async function settleInvoice(program: Program, invoicePk: web3.PublicKey,
   const sellerAta = await getAssociatedTokenAddress(usdcMint, seller)
 
   const txSig = await program.methods
-    .setSettled(amount)
+    .setSettled(fundedAmount)
     .accounts({
       invoice: invoicePk,
+      config: configPda,
       operator: (program.provider as AnchorProvider).wallet.publicKey,
       sellerAta,
       escrowToken,

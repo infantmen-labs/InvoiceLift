@@ -1,20 +1,27 @@
 import React from 'react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { AnchorProvider, Program, web3, Idl, BN } from '@coral-xyz/anchor';
 import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token';
 import { useSignerMode } from '../state/signerMode';
 import { useToast } from '../components/Toast';
+import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { FormGroup } from '../components/ui/FormGroup';
 
 const backend = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:8080';
 
 export function MintInvoice(){
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ invoice?: string; mintTx?: string; escrowTx?: string; error?: string } | null>(null);
+  const [step, setStep] = useState(1);
   const wallet = useWallet();
   const { connection } = useConnection();
   const { mode, adminWallet } = useSignerMode();
   const { show } = useToast();
+  const navigate = useNavigate();
 
   function toBaseUnits(v: string){
     const n = Number(v);
@@ -126,33 +133,151 @@ export function MintInvoice(){
       // Trigger backend upsert so the list reflects immediately
       try { await fetch(`${backend}/api/invoice/${invoiceId}`); } catch {}
       form.reset();
+      setStep(1);
     }catch(err: any){
       setResult({ error: err?.message || String(err) });
     }finally{
       setLoading(false);
     }
   }
+  const isLastStep = step === 3;
+
   return (
-    <form onSubmit={handleMint} style={{ display: 'grid', gap: 8 }}>
-      <h2>Mint Invoice</h2>
-      <input name="metadataHash" placeholder="Metadata hash (CID)" />
-      <input name="amount" placeholder="Amount (USDC)" />
-      <input name="dueDate" placeholder="Due date (unix)" />
-      <div style={{ display: 'flex', gap: 8 }}>
-        {mode === 'backend' ? (
-          <button type="submit" disabled={loading}>{loading ? 'Minting...' : 'Mint (Backend)'}</button>
-        ) : (
-          <button type="button" onClick={handleMintWithWallet} disabled={loading || !wallet.publicKey}>Mint with Wallet</button>
-        )}
+    <div className="mx-auto mt-6 max-w-xl space-y-4">
+      <div>
+        <h1 className="text-lg font-semibold text-slate-900">Mint invoice</h1>
+        <p className="text-xs text-slate-500">Create a new invoice and escrow account on devnet.</p>
       </div>
-      {result?.error && <div style={{ color: 'red' }}>{result.error}</div>}
-      {result?.invoice && (
-        <div style={{ display: 'grid', gap: 4 }}>
-          <div>Invoice: {result.invoice}</div>
-          {result.mintTx && <a href={`https://explorer.solana.com/tx/${result.mintTx}?cluster=devnet`} target="_blank">Mint Tx</a>}
-          {result.escrowTx && <a href={`https://explorer.solana.com/tx/${result.escrowTx}?cluster=devnet`} target="_blank">Create Escrow Tx</a>}
-        </div>
-      )}
-    </form>
+      <Card>
+        <CardHeader>
+          <div className="flex w-full items-center justify-between">
+            <CardTitle>Invoice details</CardTitle>
+            <div className="text-[11px] font-medium text-slate-500">Step {step} of 3</div>
+          </div>
+        </CardHeader>
+        <CardBody>
+          <form onSubmit={handleMint} className="grid gap-4 text-sm">
+            {(step >= 1) && (
+              <FormGroup
+                label="Metadata hash (CID)"
+                htmlFor="metadataHash"
+                required
+                help="ipfs://… or arbitrary hash identifying off-chain invoice data."
+              >
+                <Input id="metadataHash" name="metadataHash" placeholder="ipfs://… or arbitrary hash" required />
+              </FormGroup>
+            )}
+
+            {(step >= 2) && (
+              <FormGroup
+                label="Amount (USDC)"
+                htmlFor="amount"
+                required
+                help="Displayed in USDC, converted to 6-decimal base units on submit."
+              >
+                <Input id="amount" name="amount" placeholder="e.g. 5.0" required />
+              </FormGroup>
+            )}
+
+            {step === 3 && (
+              <FormGroup
+                label="Due date (UNIX timestamp)"
+                htmlFor="dueDate"
+                required
+                help="Seconds since epoch; passed directly to the backend."
+              >
+                <Input id="dueDate" name="dueDate" placeholder="e.g. 1734043200" required />
+              </FormGroup>
+            )}
+
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setStep((s) => Math.max(1, s - 1))}
+                  disabled={step === 1 || loading}
+                >
+                  Back
+                </Button>
+                {!isLastStep && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setStep((s) => Math.min(3, s + 1))}
+                    disabled={loading}
+                  >
+                    Next
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                {mode === 'backend' ? (
+                  <Button type="submit" loading={loading} disabled={!isLastStep || loading}>
+                    {loading ? 'Minting…' : 'Mint (backend signer)'}
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={handleMintWithWallet}
+                    disabled={loading || !wallet.publicKey || !isLastStep}
+                    loading={loading}
+                    variant="secondary"
+                  >
+                    {wallet.publicKey ? 'Mint with wallet' : 'Connect wallet to mint'}
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {result?.error && (
+              <div className="text-xs text-red-600">{result.error}</div>
+            )}
+            {result?.invoice && (
+              <div className="mt-2 grid gap-1 text-xs text-slate-800">
+                <div>
+                  <span className="text-slate-500">Invoice:</span>{' '}
+                  <span className="font-mono break-all">{result.invoice}</span>
+                </div>
+                {result.mintTx && (
+                  <a
+                    href={`https://explorer.solana.com/tx/${result.mintTx}?cluster=devnet`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-brand hover:text-brand-dark"
+                  >
+                    Mint transaction
+                  </a>
+                )}
+                {result.escrowTx && (
+                  <a
+                    href={`https://explorer.solana.com/tx/${result.escrowTx}?cluster=devnet`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-brand hover:text-brand-dark"
+                  >
+                    Create escrow transaction
+                  </a>
+                )}
+                <div className="mt-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      if (result?.invoice) navigate(`/invoice/${result.invoice}`)
+                    }}
+                  >
+                    View invoice details
+                  </Button>
+                </div>
+              </div>
+            )}
+          </form>
+        </CardBody>
+      </Card>
+    </div>
   );
 }

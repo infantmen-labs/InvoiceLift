@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useToast } from '../components/Toast'
+import { Button } from '../components/ui/Button'
+import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card'
+import { StatCard } from '../components/ui/StatCard'
 
 const backend = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:8080'
 
@@ -28,9 +31,17 @@ export function Portfolio(){
   useEffect(() => { load() }, [walletStr])
 
   if (!walletStr) return (
-    <div>
-      <h2>Portfolio</h2>
-      <div>Connect a wallet to view your portfolio.</div>
+    <div className="mt-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Portfolio</CardTitle>
+        </CardHeader>
+        <CardBody>
+          <p className="text-sm text-slate-300">
+            Connect a wallet to view your invoice share holdings.
+          </p>
+        </CardBody>
+      </Card>
     </div>
   )
 
@@ -38,30 +49,78 @@ export function Portfolio(){
     try { const n = Number(a) / 1_000_000; return n.toLocaleString(undefined, { maximumFractionDigits: 6 }) } catch { return a }
   }
 
+  const stats = useMemo(() => {
+    if (!items.length) return { count: 0, totalShares: 0 }
+    let totalShares = 0
+    for (const h of items){
+      const n = Number(h.amount || '0') / 1_000_000
+      if (Number.isFinite(n)) totalShares += n
+    }
+    return { count: items.length, totalShares }
+  }, [items])
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0 }}>Portfolio</h2>
-        <button onClick={load} disabled={loading}>{loading ? 'Loading...' : 'Refresh'}</button>
+    <div className="mt-6 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="m-0 text-lg font-semibold text-slate-900">Portfolio</h2>
+          <p className="text-xs text-slate-500">
+            Invoice share positions held by the connected wallet on devnet.
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={load}
+          loading={loading}
+        >
+          Refresh
+        </Button>
+      </div>
+      <div className="grid w-full max-w-md grid-cols-1 gap-3 sm:grid-cols-2">
+        <StatCard label="Positions" value={stats.count.toString()} />
+        <StatCard
+          label="Total shares"
+          value={stats.totalShares.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+        />
       </div>
       {items.length === 0 ? (
-        <div style={{ marginTop: 8 }}>No holdings</div>
+        <div className="text-sm text-slate-500">No holdings found for this wallet.</div>
       ) : (
-        <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+        <div className="grid gap-3">
           {items.map((h) => (
-            <div key={`${h.invoice}:${h.sharesMint}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>Invoice</div>
-                <div style={{ fontFamily: 'monospace' }}>{h.invoice}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>Shares</div>
-                <div>{fmt(h.amount)} <a href={`https://solscan.io/address/${h.sharesMint}?cluster=devnet`} target="_blank">mint</a></div>
-              </div>
-              <div style={{ justifySelf: 'end' }}>
-                <a href={`https://solscan.io/address/${h.invoice}?cluster=devnet`} target="_blank">View invoice on explorer</a>
-              </div>
-            </div>
+            <Card key={`${h.invoice}:${h.sharesMint}`}>
+              <CardBody className="grid gap-2 text-sm sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1.6fr)] sm:items-center">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500">Invoice</div>
+                  <div className="font-mono break-all text-slate-800">{h.invoice}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500">Shares</div>
+                  <div className="text-slate-800">
+                    {fmt(h.amount)}{' '}
+                    <a
+                      href={`https://solscan.io/address/${h.sharesMint}?cluster=devnet`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-brand hover:text-brand-dark"
+                    >
+                      mint
+                    </a>
+                  </div>
+                </div>
+                <div className="mt-2 justify-self-start text-xs text-brand sm:mt-0 sm:justify-self-end">
+                  <a
+                    href={`https://solscan.io/address/${h.invoice}?cluster=devnet`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-brand-dark"
+                  >
+                    View invoice on explorer
+                  </a>
+                </div>
+              </CardBody>
+            </Card>
           ))}
         </div>
       )}

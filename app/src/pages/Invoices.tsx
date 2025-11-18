@@ -1,11 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { AnchorProvider, Program, web3, Idl, BN } from '@coral-xyz/anchor'
 import { getAccount, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token'
 import { useSignerMode } from '../state/signerMode'
 import { useToast } from '../components/Toast'
+import { Button } from '../components/ui/Button'
+import { Input } from '../components/ui/Input'
+import { Select } from '../components/ui/Select'
+import { Badge } from '../components/ui/Badge'
+import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card'
+import { StatCard } from '../components/ui/StatCard'
+import { Table, TableBody, TableCell, TableHeader, TableHeadCell, TableRow } from '../components/ui/Table'
 
 const backend = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:8080'
+const PAGE_SIZE = 10
 
 type InvoiceRow = {
   invoicePk: string
@@ -29,7 +38,7 @@ export function Invoices() {
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<string>('')
   const [walletFilter, setWalletFilter] = useState<string>('')
-  const [auto, setAuto] = useState<boolean>(true)
+  const [auto, setAuto] = useState<boolean>(false)
   const [selected, setSelected] = useState<string | null>(null)
   const [detail, setDetail] = useState<any | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -61,6 +70,18 @@ export function Invoices() {
   const { connection } = useConnection()
   const { mode, adminWallet } = useSignerMode()
   const { show } = useToast()
+  const [page, setPage] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+  const params = useParams<{ id?: string }>()
+  const navigate = useNavigate()
+  const initialInvoiceId = params.id
+
+  function shortAddress(x?: string | null){
+    if (!x) return ''
+    const s = String(x)
+    if (s.length <= 10) return s
+    return `${s.slice(0, 4)}…${s.slice(-4)}`
+  }
 
   function bytesToBase64(bytes: Uint8Array){
     let bin = ''
@@ -227,8 +248,51 @@ export function Invoices() {
     const p = new URLSearchParams()
     if (status) p.set('status', status)
     if (walletFilter) p.set('wallet', walletFilter)
+    p.set('page', String(page))
+    p.set('pageSize', String(PAGE_SIZE))
     return p.toString() ? '?' + p.toString() : ''
+  }, [status, walletFilter, page])
+
+  const stats = useMemo(() => {
+    if (!items.length) return { totalAmount: 0, totalFunded: 0, avgFundedPct: 0 }
+    let totalAmount = 0
+    let totalFunded = 0
+    for (const it of items){
+      const amt = Number(it.amount || '0') / 1_000_000
+      const funded = Number(it.fundedAmount || '0') / 1_000_000
+      if (Number.isFinite(amt)) totalAmount += amt
+      if (Number.isFinite(funded)) totalFunded += funded
+    }
+    const avgFundedPct = totalAmount > 0 ? (totalFunded / totalAmount) * 100 : 0
+    return { totalAmount, totalFunded, avgFundedPct }
+  }, [items])
+
+  const pageCount = totalCount ? Math.ceil(totalCount / PAGE_SIZE) : 0
+  const currentPage = pageCount ? Math.min(page, pageCount) : 1
+  const startIndex = (currentPage - 1) * PAGE_SIZE
+  const pagedItems = items
+
+  useEffect(() => {
+    // Reset to first page when filters change
+    setPage(1)
   }, [status, walletFilter])
+
+  useEffect(() => {
+    if (initialInvoiceId) {
+      setSelected(initialInvoiceId)
+    }
+  }, [initialInvoiceId])
+
+  function handleCloseDetail(){
+    setSelected(null)
+    setDetail(null)
+    setPositions([])
+    setHistory([])
+    setListings([])
+    if (initialInvoiceId) {
+      navigate('/invoices', { replace: true })
+    }
+  }
 
   async function load(){
     setLoading(true)
@@ -237,6 +301,11 @@ export function Invoices() {
       const j = await r.json()
       if (!j.ok) throw new Error(j.error || 'load failed')
       setItems(j.invoices || [])
+      if (j.pagination && typeof j.pagination.total === 'number') {
+        setTotalCount(j.pagination.total)
+      } else {
+        setTotalCount((j.invoices || []).length || 0)
+      }
     }finally{
       setLoading(false)
     }
@@ -272,8 +341,37 @@ export function Invoices() {
     const p = Number(listPrice)
     const q = Number(listQty)
     if (!Number.isFinite(p) || p <= 0 || !Number.isFinite(q) || q <= 0) { show({ text: 'Enter valid price and quantity', kind: 'error' }); return }
-    const priceBase = Math.round(p * 1_000_000)
+
+    const myPos = positions.find((pos) => pos.wallet === me)
+    const myAmountBase = myPos ? Number(myPos.amount || '0') : 0
+    if (!Number.isFinite(myAmountBase) || myAmountBase <= 0) {
+      show({ text: 'You have no shares to list for this invoice', kind: 'error' })
+      return
+    }
+
+    // Subtract any already-open listings for this seller on this invoice
+    let reservedBase = 0
+    for (const l of listings) {
+      if (l.seller !== me || l.status !== 'Open') continue
+      try {
+        const raw = (l as any).remainingQty ?? (l as any).qty
+        const n = Number(raw)
+        if (Number.isFinite(n) && n > 0) reservedBase += n
+      } catch {}
+    }
+    const availableBase = Math.max(myAmountBase - reservedBase, 0)
+
     const qtyBase = Math.round(q * 1_000_000)
+    if (qtyBase > availableBase) {
+      const maxShares = availableBase / 1_000_000
+      show({
+        text: `Quantity cannot exceed your balance of ${maxShares.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares`,
+        kind: 'error',
+      })
+      return
+    }
+
+    const priceBase = Math.round(p * 1_000_000)
     setCreateListingLoading(true)
     try{
       const ts = Date.now()
@@ -554,295 +652,839 @@ export function Invoices() {
     return () => clearInterval(id)
   }, [selected, auto])
 
-  
   return (
-    <div style={{ marginTop: 24 }}>
-      <h2>Invoices</h2>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All</option>
-          <option value="Open">Open</option>
-          <option value="Funded">Funded</option>
-          <option value="Settled">Settled</option>
-        </select>
-        <input value={walletFilter} onChange={(e) => setWalletFilter(e.target.value)} placeholder="Filter by wallet" style={{ width: 360 }} />
-        <button onClick={load} disabled={loading}>{loading ? 'Loading...' : 'Refresh'}</button>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Auto refresh
-        </label>
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+        <Card className="flex-1 bg-white">
+          <CardHeader className="border-b border-slate-200 px-4 py-3">
+            <CardTitle>Filters</CardTitle>
+          </CardHeader>
+          <CardBody className="flex flex-wrap items-center gap-3">
+            <div className="w-32">
+              <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                <option value="">All</option>
+                <option value="Open">Open</option>
+                <option value="Funded">Funded</option>
+                <option value="Settled">Settled</option>
+              </Select>
+            </div>
+            <div className="w-64 min-w-[220px] flex-1">
+              <Input
+                value={walletFilter}
+                onChange={(e) => setWalletFilter(e.target.value)}
+                placeholder="Filter by wallet (seller/investor)"
+              />
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={load}
+              loading={loading}
+            >
+              Refresh
+            </Button>
+            <label className="flex items-center gap-2 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                checked={auto}
+                onChange={(e) => setAuto(e.target.checked)}
+                className="h-3 w-3 rounded border-slate-300 bg-white text-brand focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand"
+              />
+              Auto refresh
+            </label>
+          </CardBody>
+        </Card>
+        <div className="grid w-full max-w-md flex-none grid-cols-1 gap-3 sm:grid-cols-3">
+          <StatCard label="Total invoices" value={items.length.toString()} />
+          <StatCard
+            label="Total amount"
+            value={`${stats.totalAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC`}
+          />
+          <StatCard
+            label="Avg funded"
+            value={`${stats.avgFundedPct.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
+          />
+        </div>
       </div>
-      <div>
+
+      <div className="overflow-x-auto">
         {items.length === 0 ? (
-          <div>No invoices</div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 140px 1fr', gap: 8 }}>
-            <div style={{ fontWeight: 600 }}>Invoice</div>
-            <div style={{ fontWeight: 600 }}>Status</div>
-            <div style={{ fontWeight: 600 }}>Amount</div>
-            <div style={{ fontWeight: 600 }}>Links</div>
-            {items.map((it) => (
-              <React.Fragment key={it.invoicePk}>
-                <div style={{ wordBreak: 'break-all' }}>{it.invoicePk}</div>
-                <div>{it.status}</div>
-                <div>{Number(it.fundedAmount) / 1_000_000} / {Number(it.amount) / 1_000_000} USDC</div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <a href={`https://solscan.io/address/${it.invoicePk}?cluster=devnet`} target="_blank">Invoice</a>
-                  <a href={`https://solscan.io/address/${it.escrowToken}?cluster=devnet`} target="_blank">Escrow</a>
-                  {it.lastSig ? <a href={`https://solscan.io/tx/${it.lastSig}?cluster=devnet`} target="_blank">Last Tx</a> : null}
-                  <button onClick={() => setSelected(it.invoicePk)}>View</button>
-                </div>
-              </React.Fragment>
-            ))}
+          <div className="rounded-lg border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
+            No invoices found for the current filters.
           </div>
+        ) : (
+          <>
+            <Table>
+              <TableHeader>
+                <tr>
+                  <TableHeadCell className="w-[40px]">#</TableHeadCell>
+                  <TableHeadCell>Invoice</TableHeadCell>
+                  <TableHeadCell>Status</TableHeadCell>
+                  <TableHeadCell>Seller</TableHeadCell>
+                  <TableHeadCell>Funded / Amount</TableHeadCell>
+                  <TableHeadCell>Links</TableHeadCell>
+                </tr>
+              </TableHeader>
+              <TableBody>
+                {pagedItems.map((it, idx) => {
+                  const amount = Number(it.amount || '0') / 1_000_000
+                  const funded = Number(it.fundedAmount || '0') / 1_000_000
+                  const fundedPct = amount > 0 ? (funded / amount) * 100 : 0
+                  const rowNumber = startIndex + idx + 1
+                  return (
+                    <TableRow
+                      key={it.invoicePk}
+                      className="cursor-pointer"
+                      onClick={() => setSelected(it.invoicePk)}
+                    >
+                      <TableCell className="text-xs text-slate-500">
+                        {rowNumber}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-slate-800">
+                        {shortAddress(it.invoicePk)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={it.status === 'Open' ? 'warning' : it.status === 'Funded' ? 'success' : 'default'}
+                        >
+                          {it.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-slate-700">
+                        {shortAddress(it.seller)}
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-800">
+                        <span className="font-medium">{funded.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                        <span className="text-slate-500"> / {amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC</span>
+                        {amount > 0 && (
+                          <span className="ml-1 text-slate-500">
+                            · {fundedPct.toLocaleString(undefined, { maximumFractionDigits: 1 })}%
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <a
+                            href={`https://solscan.io/address/${it.invoicePk}?cluster=devnet`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand hover:text-brand-dark"
+                          >
+                            Invoice
+                          </a>
+                          <a
+                            href={`https://solscan.io/address/${it.escrowToken}?cluster=devnet`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand hover:text-brand-dark"
+                          >
+                            Escrow
+                          </a>
+                          {it.lastSig ? (
+                            <a
+                              href={`https://solscan.io/tx/${it.lastSig}?cluster=devnet`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-brand hover:text-brand-dark"
+                            >
+                              Last tx
+                            </a>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+
+            {pageCount > 1 && (
+              <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
+                <div>
+                  Showing {startIndex + 1}–{Math.min(startIndex + pagedItems.length, items.length)} of {items.length}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={currentPage === 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    Prev
+                  </Button>
+                  {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
+                    <Button
+                      key={p}
+                      variant={p === currentPage ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => setPage(p)}
+                    >
+                      {p}
+                    </Button>
+                  ))}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={currentPage === pageCount}
+                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
       {selected ? (
-        <div style={{ marginTop: 16, padding: 12, border: '1px solid #eee', borderRadius: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0 }}>Invoice Detail</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => loadDetail(selected)} disabled={detailLoading}>{detailLoading ? 'Loading...' : 'Refresh'}</button>
-              <button onClick={() => { setSelected(null); setDetail(null); setPositions([]); setHistory([]); setListings([]) }}>Close</button>
-            </div>
-          </div>
-          <div style={{ marginTop: 8 }}>
-            {detailError ? <div style={{ color: 'red' }}>{detailError}</div> : null}
-            {!detail || detailLoading ? (
-              <div>{detailLoading ? 'Loading...' : 'No data'}</div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', rowGap: 6 }}>
-                <div>Invoice</div>
-                <div style={{ wordBreak: 'break-all' }}>{selected}</div>
-                <div>Status</div>
-                <div>{detailDb?.status || (detail.status ? Object.keys(detail.status)[0] : 'unknown')}</div>
-                <div>Seller</div>
-                <div style={{ wordBreak: 'break-all' }}>{detail.seller || ''}</div>
-                <div>Investor</div>
-                <div style={{ wordBreak: 'break-all' }}>{detail.investor || ''}</div>
-                <div>USDC Mint</div>
-                <div style={{ wordBreak: 'break-all' }}>{detail.usdcMint || ''}</div>
-                <div>Shares Mint</div>
-                <div style={{ wordBreak: 'break-all', display: 'flex', gap: 8, alignItems: 'center' }}>
-                  {(() => { const v = detail.sharesMint; const s = v && v.toBase58 ? v.toBase58() : (v || ''); return s })() || '—'}
-                  {(() => { const v = detail.sharesMint; const s = v && v.toBase58 ? v.toBase58() : (v || ''); return s && s !== '11111111111111111111111111111111' ? <a href={`https://solscan.io/address/${s}?cluster=devnet`} target="_blank">View</a> : null })()}
-                </div>
-                <div>Amount</div>
-                <div>{(() => {
-                  const raw = (detailDb?.amount ?? (detail?.amount as any))
-                  if (raw && typeof raw === 'object' && 'toNumber' in raw) return fmt6((raw as any).toNumber())
-                  return fmt6(raw)
-                })()} USDC</div>
-                <div>Funded</div>
-                <div>{(() => {
-                  const raw = (detailDb?.fundedAmount ?? (detail?.fundedAmount as any))
-                  if (raw && typeof raw === 'object' && 'toNumber' in raw) return fmt6((raw as any).toNumber())
-                  return fmt6(raw)
-                })()} USDC</div>
-                <div>Due Date</div>
-                <div>{fmtDateSmart(detail.dueDate)}</div>
-                <div>Links</div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <a href={`https://solscan.io/address/${selected}?cluster=devnet`} target="_blank">Invoice</a>
-                  {detail.usdcMint ? <a href={`https://solscan.io/address/${detail.usdcMint}?cluster=devnet`} target="_blank">USDC Mint</a> : null}
-                </div>
-                <div>Listings</div>
-                <div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    {(() => {
-                      const me = walletAdapter.publicKey?.toBase58()
-                      const canList = !!me
-                      return (
-                        <>
-                          <input type="number" min="0" step="0.000001" title="Price per share in USDC (6 decimals). Converted to base units on submit." value={listPrice} onChange={(e) => setListPrice(e.target.value)} placeholder="Price (USDC/share)" style={{ width: 160 }} />
-                          <input type="number" min="0" step="0.000001" title="Quantity in shares (6 decimals). Converted to base units on submit." value={listQty} onChange={(e) => setListQty(e.target.value)} placeholder="Qty (shares)" style={{ width: 160 }} />
-                          <button onClick={handleCreateListing} disabled={!canList || createListingLoading}>{createListingLoading ? 'Creating...' : 'Create Listing'}</button>
-                          {!canList ? <span style={{ color: '#6b7280' }}>Connect wallet to list shares</span> : null}
-                        </>
-                      )
-                    })()}
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 pl-56 pr-4">
+          <div
+            className="absolute inset-0"
+            onClick={handleCloseDetail}
+          />
+          <div className="relative z-10 w-full max-w-3xl px-4">
+            <Card className="max-h-[80vh] overflow-hidden bg-white shadow-xl">
+              <CardHeader className="border-b border-slate-200">
+                <div className="flex w-full items-center justify-between gap-2">
+                  <CardTitle>Invoice detail</CardTitle>
+                  <div className="flex items-center gap-2 text-xs">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => loadDetail(selected)}
+                      disabled={detailLoading}
+                    >
+                      {detailLoading ? 'Loading…' : 'Refresh'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCloseDetail}
+                    >
+                      Close
+                    </Button>
                   </div>
-                  <div style={{ marginTop: 8 }}>
-                    {listingsLoading ? 'Loading listings...' : (
-                      listings.length === 0 ? 'No listings' : (
-                        <div style={{ display: 'grid', gap: 6 }}>
-                          {listings.map((l) => {
-                            const price = Number(l.price) / 1_000_000
-                            const remain = Number(l.remainingQty) / 1_000_000
-                            const me = walletAdapter.publicKey?.toBase58()
-                            const isMyListing = me === l.seller
-                            const canCancel = isMyListing && l.status === 'Open'
-                            const canFill = l.status === 'Open'
-                            return (
-                              <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', alignItems: 'center', gap: 8 }}>
-                                <div><span style={{ fontFamily: 'monospace' }}>{l.seller}</span> {isMyListing ? <span style={{ color: '#10b981', fontSize: '0.85em' }}>(you)</span> : null}</div>
-                                <div>{price} USDC/share</div>
-                                <div>{remain} shares {l.escrowDeposited ? <span style={{ color: '#6b7280', fontSize: '0.85em' }}>(deposited)</span> : null}</div>
-                                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                                  {canCancel ? <button onClick={() => handleCancelListing(l.id)}>Cancel</button> : null}
-                                  {!allowanceEnabled && canCancel && !depositedIds[l.id] && !l.escrowDeposited ? (
-                                    <button onClick={() => handleDepositListingOnchain(l.id)} disabled={depositLoadingId === l.id}>{depositLoadingId === l.id ? 'Depositing...' : 'Deposit Shares'}</button>
-                                  ) : null}
-                                  {allowanceEnabled && isMyListing && l.status === 'Open' && !l.onChain ? (
-                                    <button onClick={() => handleInitListingV2(l.id)} disabled={initV2LoadingId === l.id}>{initV2LoadingId === l.id ? 'Initializing...' : 'Init On-chain (V2)'}</button>
-                                  ) : null}
-                                  {allowanceEnabled && isMyListing && l.status === 'Open' ? (
-                                    <button onClick={() => handleApproveSharesV2(l.id)} disabled={approveSharesLoadingId === l.id}>{approveSharesLoadingId === l.id ? 'Approving...' : 'Approve Shares'}</button>
-                                  ) : null}
-                                  {allowanceEnabled && isMyListing && l.status === 'Open' ? (
-                                    <button onClick={() => handleRevokeSharesV2(l.id)}>Revoke Shares</button>
-                                  ) : null}
-                                  {allowanceEnabled && isMyListing && l.status === 'Open' ? (
-                                    <button onClick={() => handleCancelListingOnchainV2(l.id)}>Cancel On-chain (V2)</button>
-                                  ) : null}
-                                  {canFill ? (
-                                    <>
-                                      <input type="number" min="0" step="0.000001" title="Quantity to buy in shares (6 decimals)." value={fillQtyById[l.id] || ''} onChange={(e) => setFillQtyById((m) => ({ ...m, [l.id]: e.target.value }))} placeholder="Qty (shares)" style={{ width: 100 }} />
-                                      {allowanceEnabled ? (
-                                        <>
-                                          <button onClick={() => handleApproveUsdcV2(l.id)} disabled={approveUsdcLoadingId === l.id}>{approveUsdcLoadingId === l.id ? 'Approving...' : 'Approve USDC'}</button>
-                                          <button onClick={() => handleRevokeUsdcV2(l.id)}>Revoke USDC</button>
-                                          <button onClick={() => handleFulfillListingOnchainV2(l.id)} disabled={fillLoadingId === l.id}>{fillLoadingId === l.id ? 'Filling...' : 'Fill On-chain (V2)'}</button>
-                                        </>
-                                      ) : (
-                                        <button onClick={() => handleFulfillListingOnchain(l.id)} disabled={fillLoadingId === l.id}>{fillLoadingId === l.id ? 'Filling...' : 'Fill On-chain'}</button>
-                                      )}
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span>{l.status}</span>
-                                      {canCancel ? <button onClick={() => handleCancelListingOnchain(l.id)}>Cancel On-chain</button> : null}
-                                    </>
-                                  )}
-                                </div>
+                </div>
+              </CardHeader>
+              <CardBody className="max-h-[70vh] overflow-y-auto">
+                {detailError ? (
+                  <div className="mb-2 text-xs text-red-600">{detailError}</div>
+                ) : null}
+                {!detail || detailLoading ? (
+                  <div className="text-sm text-slate-500">
+                    {detailLoading ? 'Loading…' : 'No data'}
+                  </div>
+                ) : (
+                  <div className="space-y-6 text-sm">
+                    {/* Summary */}
+                    <div>
+                      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Summary
+                      </h3>
+                      <div className="grid grid-cols-[140px_minmax(0,1fr)] gap-y-2">
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                          Invoice
+                        </div>
+                        <div
+                          className="break-all font-mono text-xs text-slate-800"
+                          title={selected || undefined}
+                        >
+                          {shortAddress(selected)}
+                        </div>
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                          Status
+                        </div>
+                        <div className="text-xs text-slate-900">
+                          {(() => {
+                            const raw = (detailDb?.status || (detail.status ? Object.keys(detail.status)[0] : 'unknown')) as string
+                            const normalized = String(raw || '').toLowerCase()
+                            let cls = 'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium '
+                            if (normalized === 'open') cls += 'bg-emerald-50 text-emerald-700'
+                            else if (normalized === 'funded') cls += 'bg-blue-50 text-blue-700'
+                            else if (normalized === 'repaid' || normalized === 'settled') cls += 'bg-slate-900 text-slate-50'
+                            else if (normalized === 'cancelled' || normalized === 'canceled') cls += 'bg-slate-100 text-slate-600'
+                            else cls += 'bg-slate-100 text-slate-700'
+                            return <span className={cls}>{raw || 'Unknown'}</span>
+                          })()}
+                        </div>
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                          Seller
+                        </div>
+                        <div
+                          className="break-all font-mono text-xs text-slate-800"
+                          title={detail.seller || undefined}
+                        >
+                          {detail.seller ? shortAddress(detail.seller) : '—'}
+                        </div>
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                          Investor
+                        </div>
+                        <div
+                          className="break-all font-mono text-xs text-slate-800"
+                          title={(() => {
+                            const inv = detail.investor || ''
+                            return inv && inv !== '11111111111111111111111111111111' ? inv : undefined
+                          })()}
+                        >
+                          {(() => {
+                            const inv = detail.investor || ''
+                            if (!inv || inv === '11111111111111111111111111111111') return 'Not set'
+                            return shortAddress(inv)
+                          })()}
+                        </div>
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                          USDC Mint
+                        </div>
+                        <div
+                          className="break-all font-mono text-xs text-slate-800"
+                          title={(() => {
+                            const mint = detail.usdcMint || ''
+                            return mint && mint !== '11111111111111111111111111111111' ? mint : undefined
+                          })()}
+                        >
+                          {(() => {
+                            const mint = detail.usdcMint || ''
+                            return mint && mint !== '11111111111111111111111111111111' ? shortAddress(mint) : '—'
+                          })()}
+                        </div>
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                          Shares Mint
+                        </div>
+                        <div
+                          className="flex items-center gap-2 break-all font-mono text-xs text-slate-800"
+                          title={(() => {
+                            const v = detail.sharesMint
+                            const s = v && v.toBase58 ? v.toBase58() : (v || '')
+                            return s && s !== '11111111111111111111111111111111' ? s : undefined
+                          })()}
+                        >
+                          {(() => {
+                            const v = detail.sharesMint
+                            const s = v && v.toBase58 ? v.toBase58() : (v || '')
+                            if (!s || s === '11111111111111111111111111111111') return '—'
+                            return shortAddress(s)
+                          })()}
+                          {(() => {
+                            const v = detail.sharesMint
+                            const s = v && v.toBase58 ? v.toBase58() : (v || '')
+                            return s && s !== '11111111111111111111111111111111'
+                              ? <a href={`https://solscan.io/address/${s}?cluster=devnet`} target="_blank" rel="noreferrer" className="text-brand hover:text-brand-dark">View</a>
+                              : null
+                          })()}
+                        </div>
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                          Amount
+                        </div>
+                        <div className="text-xs text-slate-900">
+                          {(() => {
+                            const raw = (detailDb?.amount ?? (detail?.amount as any))
+                            if (raw && typeof raw === 'object' && 'toNumber' in raw) return fmt6((raw as any).toNumber())
+                            return fmt6(raw)
+                          })()} USDC
+                        </div>
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                          Funded
+                        </div>
+                        <div className="text-xs text-slate-900">
+                          {(() => {
+                            const raw = (detailDb?.fundedAmount ?? (detail?.fundedAmount as any))
+                            if (raw && typeof raw === 'object' && 'toNumber' in raw) return fmt6((raw as any).toNumber())
+                            return fmt6(raw)
+                          })()} USDC
+                        </div>
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                          Due Date
+                        </div>
+                        <div className="text-xs text-slate-900">{fmtDateSmart(detail.dueDate)}</div>
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                          Links
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <a
+                            href={`https://solscan.io/address/${selected}?cluster=devnet`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand hover:text-brand-dark"
+                          >
+                            Invoice
+                          </a>
+                          {detail.usdcMint ? (
+                            <a
+                              href={`https://solscan.io/address/${detail.usdcMint}?cluster=devnet`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-brand hover:text-brand-dark"
+                            >
+                              USDC Mint
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Listings */}
+                    <div className="border-t border-slate-100 pt-4">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Listings</h3>
+                        {(() => {
+                          const me = walletAdapter.publicKey?.toBase58()
+                          if (!me) return null
+                          const pos = positions.find((p) => p.wallet === me)
+                          if (!pos) return null
+                          let balanceBase = 0
+                          try {
+                            balanceBase = Number(pos.amount || '0')
+                          } catch {}
+                          if (!Number.isFinite(balanceBase) || balanceBase <= 0) return null
+
+                          // Subtract already-open listings for this seller on this invoice
+                          let reservedBase = 0
+                          for (const l of listings) {
+                            if (l.seller !== me || l.status !== 'Open') continue
+                            try {
+                              const raw = (l as any).remainingQty ?? (l as any).qty
+                              const n = Number(raw)
+                              if (Number.isFinite(n) && n > 0) reservedBase += n
+                            } catch {}
+                          }
+                          const availableBase = Math.max(balanceBase - reservedBase, 0)
+                          if (availableBase <= 0) return null
+                          const shares = availableBase / 1_000_000
+                          return (
+                            <span className="text-[11px] text-slate-500">
+                              Available: <span className="font-medium text-slate-700">{shares.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares</span>
+                            </span>
+                          )
+                        })()}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        {(() => {
+                          const me = walletAdapter.publicKey?.toBase58()
+                          const canList = !!me
+                          return (
+                            <>
+                              <div className="w-40">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.000001"
+                                  title="Price per share in USDC (6 decimals). Converted to base units on submit."
+                                  value={listPrice}
+                                  onChange={(e) => setListPrice(e.target.value)}
+                                  placeholder="Price (USDC/share)"
+                                  className="h-8 text-[11px]"
+                                />
                               </div>
-                            )
-                          })}
-                        </div>
-                      )
-                    )}
-                  </div>
-                </div>
-                <div>Fractional</div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {(() => {
-                    const v = detail.sharesMint; const s = v && v.toBase58 ? v.toBase58() : (v || '')
-                    const hasShares = !!s && s !== '11111111111111111111111111111111'
-                    if (!hasShares) {
-                      return (
-                        <>
-                          {mode === 'backend' ? (
-                            <button
-                              onClick={async () => {
-                                if (!selected) return
-                                setFxError(null)
-                                setInitLoading(true)
-                                try{
-                                  const r = await fetch(`${backend}/api/invoice/${selected}/init-shares`, { method: 'POST', headers: { ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) } })
-                                  const j = await r.json()
-                                  if (!j.ok) throw new Error(j.error || 'init failed')
-                                  show({ text: 'Init shares submitted', href: `https://explorer.solana.com/tx/${j.tx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
-                                  await loadDetail(selected)
-                                  await load()
-                                }catch(e: any){ setFxError(e?.message || String(e)) }
-                                finally{ setInitLoading(false) }
-                              }}
-                              disabled={initLoading}
-                            >{initLoading ? 'Initializing...' : 'Init Shares (Backend)'}</button>
-                          ) : (
-                            <button onClick={handleInitSharesWithWallet} disabled={initWalletLoading || !walletAdapter.publicKey}>{initWalletLoading ? 'Initializing...' : 'Init Shares (Wallet)'}</button>
-                          )}
-                        </>
-                      )
-                    }
-                    return (
-                      <>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.000001"
-                          title="Amount in USDC (6 decimals). Converted to base units on submit."
-                          value={fracAmount}
-                          onChange={(e) => setFracAmount(e.target.value)}
-                          placeholder="Amount (USDC)"
-                          style={{ width: 160 }}
-                        />
-                        {mode === 'backend' ? (
-                          <button
-                            onClick={async () => {
-                              if (!selected) return
-                              const n = Number(fracAmount)
-                              if (!Number.isFinite(n) || n <= 0) { setFxError('Enter a valid amount'); return }
-                              const base = Math.round(n * 1_000_000)
-                              setFxError(null)
-                              setFxLoading(true)
-                              try{
-                                const r = await fetch(`${backend}/api/invoice/${selected}/fund-fractional`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json', ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) },
-                                  body: JSON.stringify({ amount: String(base) })
-                                })
-                                const j = await r.json()
-                                if (!j.ok) throw new Error(j.error || 'fund failed')
-                                show({ text: 'Fund fraction submitted', href: `https://explorer.solana.com/tx/${j.tx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
-                                setFracAmount('')
-                                await loadDetail(selected)
-                                await load()
-                              }catch(e: any){ setFxError(e?.message || String(e)) }
-                              finally{ setFxLoading(false) }
-                            }}
-                            disabled={fxLoading}
-                          >{fxLoading ? 'Funding...' : 'Fund fraction (Backend)'}</button>
+                              <div className="w-40">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.000001"
+                                  title="Quantity in shares (6 decimals). Converted to base units on submit."
+                                  value={listQty}
+                                  onChange={(e) => setListQty(e.target.value)}
+                                  placeholder="Qty (shares)"
+                                  className="h-8 text-[11px]"
+                                />
+                              </div>
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={handleCreateListing}
+                                loading={createListingLoading}
+                                disabled={!canList}
+                              >
+                                Create listing
+                              </Button>
+                              {!canList ? (
+                                <span className="text-[11px] text-slate-500">Connect wallet to list shares</span>
+                              ) : null}
+                            </>
+                          )
+                        })()}
+                      </div>
+                      <div className="mt-3 text-xs text-slate-700">
+                        {listingsLoading ? (
+                          <div>Loading listings...</div>
+                        ) : listings.length === 0 ? (
+                          <div className="text-slate-500">No listings</div>
                         ) : (
-                          <button onClick={handleFundFractionWithWallet} disabled={fxWalletLoading || !walletAdapter.publicKey}>{fxWalletLoading ? 'Funding...' : 'Fund fraction (Wallet)'}</button>
-                        )}
-                        {fxError ? <span style={{ color: 'red' }}>{fxError}</span> : null}
-                      </>
-                    )
-                  })()}
-                </div>
-                <div>Positions</div>
-                <div>
-                  {positions.length === 0 ? (
-                    <span>None</span>
-                  ) : (
-                    <div style={{ display: 'grid', gap: 4 }}>
-                      {positions.map(p => (
-                        <div key={p.wallet} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <span style={{ fontFamily: 'monospace' }}>{p.wallet}</span>
-                          <span>—</span>
-                          <span>{Number(p.amount)/1_000_000} shares</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div>Positions History</div>
-                <div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <button onClick={() => selected && loadHistory(selected)} disabled={historyLoading}>{historyLoading ? 'Loading...' : 'Refresh history'}</button>
-                  </div>
-                  {history.length === 0 ? (
-                    <div style={{ marginTop: 4 }}>No recent changes</div>
-                  ) : (
-                    <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
-                      {history.map((h: { wallet: string; delta: string; newAmount: string; ts: number }, i: number) => {
-                        const delta = (() => { try { const n = Number(h.delta)/1_000_000; return (n>=0?'+':'') + n.toLocaleString(undefined,{maximumFractionDigits:6}) } catch { return h.delta } })()
-                        const na = (() => { try { const n = Number(h.newAmount)/1_000_000; return n.toLocaleString(undefined,{maximumFractionDigits:6}) } catch { return h.newAmount } })()
-                        const when = new Date(h.ts).toLocaleString()
-                        return (
-                          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                            <span style={{ fontFamily: 'monospace' }}>{h.wallet}</span>
-                            <span>Δ {delta} → {na}</span>
-                            <span style={{ color: '#6b7280' }}>{when}</span>
+                          <div className="space-y-2">
+                            <div className="hidden grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,2.2fr)] text-[11px] font-medium uppercase tracking-wide text-slate-500 md:grid">
+                              <div>Seller</div>
+                              <div>Price</div>
+                              <div>Remaining</div>
+                              <div>Actions</div>
+                            </div>
+                            {listings.map((l) => {
+                              const price = Number(l.price) / 1_000_000
+                              const remain = Number(l.remainingQty) / 1_000_000
+                              const me = walletAdapter.publicKey?.toBase58()
+                              const isMyListing = me === l.seller
+                              const canCancel = isMyListing && l.status === 'Open'
+                              const canFill = l.status === 'Open'
+                              return (
+                                <div
+                                  key={l.id}
+                                  className="grid grid-cols-1 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,2.2fr)]"
+                                >
+                                  <div className="break-all font-mono text-xs text-slate-800">
+                                    {l.seller}{' '}
+                                    {isMyListing ? <span className="ml-1 text-[10px] text-emerald-500">(you)</span> : null}
+                                  </div>
+                                  <div className="text-xs text-slate-900">
+                                    {price} <span className="text-slate-500">USDC/share</span>
+                                  </div>
+                                  <div className="text-xs text-slate-900">
+                                    {remain} <span className="text-slate-500">shares</span>{' '}
+                                    {l.escrowDeposited ? <span className="text-[10px] text-slate-500">(deposited)</span> : null}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                                    {canCancel && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleCancelListing(l.id)}
+                                      >
+                                        Cancel
+                                      </Button>
+                                    )}
+                                    {!allowanceEnabled && canCancel && !depositedIds[l.id] && !l.escrowDeposited && (
+                                      <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => handleDepositListingOnchain(l.id)}
+                                        loading={depositLoadingId === l.id}
+                                      >
+                                        Deposit shares
+                                      </Button>
+                                    )}
+                                    {allowanceEnabled && isMyListing && l.status === 'Open' && !l.onChain && (
+                                      <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => handleInitListingV2(l.id)}
+                                        loading={initV2LoadingId === l.id}
+                                      >
+                                        Init on-chain (V2)
+                                      </Button>
+                                    )}
+                                    {allowanceEnabled && isMyListing && l.status === 'Open' && (
+                                      <>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleApproveSharesV2(l.id)}
+                                          loading={approveSharesLoadingId === l.id}
+                                        >
+                                          Approve shares
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleRevokeSharesV2(l.id)}
+                                        >
+                                          Revoke shares
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleCancelListingOnchainV2(l.id)}
+                                        >
+                                          Cancel on-chain (V2)
+                                        </Button>
+                                      </>
+                                    )}
+                                    {canFill ? (
+                                      <>
+                                        <div className="w-24">
+                                          <Input
+                                            type="number"
+                                            min="0"
+                                            step="0.000001"
+                                            title="Quantity to buy in shares (6 decimals)."
+                                            value={fillQtyById[l.id] || ''}
+                                            onChange={(e) => setFillQtyById((m) => ({ ...m, [l.id]: e.target.value }))}
+                                            placeholder="Qty"
+                                            className="h-8 text-[11px]"
+                                          />
+                                        </div>
+                                        {allowanceEnabled ? (
+                                          <>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handleApproveUsdcV2(l.id)}
+                                              loading={approveUsdcLoadingId === l.id}
+                                            >
+                                              Approve USDC
+                                            </Button>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handleRevokeUsdcV2(l.id)}
+                                            >
+                                              Revoke USDC
+                                            </Button>
+                                            <Button
+                                              variant="primary"
+                                              size="sm"
+                                              onClick={() => handleFulfillListingOnchainV2(l.id)}
+                                              loading={fillLoadingId === l.id}
+                                            >
+                                              Fill on-chain (V2)
+                                            </Button>
+                                          </>
+                                        ) : (
+                                          <Button
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={() => handleFulfillListingOnchain(l.id)}
+                                            loading={fillLoadingId === l.id}
+                                          >
+                                            Fill on-chain
+                                          </Button>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <span className="text-[11px] text-slate-500">{l.status}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
                           </div>
-                        )
-                      })}
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
-            )}
+
+                    {/* Fractional */}
+                    <div className="border-t border-slate-100 pt-4">
+                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Fractional</h3>
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        {(() => {
+                          const v = detail.sharesMint; const s = v && v.toBase58 ? v.toBase58() : (v || '')
+                          const hasShares = !!s && s !== '11111111111111111111111111111111'
+                          if (!hasShares) {
+                            return (
+                              <>
+                                {mode === 'backend' ? (
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={async () => {
+                                      if (!selected) return
+                                      setFxError(null)
+                                      setInitLoading(true)
+                                      try{
+                                        const r = await fetch(`${backend}/api/invoice/${selected}/init-shares`, { method: 'POST', headers: { ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) } })
+                                        const j = await r.json()
+                                        if (!j.ok) throw new Error(j.error || 'init failed')
+                                        show({ text: 'Init shares submitted', href: `https://explorer.solana.com/tx/${j.tx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+                                        await loadDetail(selected)
+                                        await load()
+                                      }catch(e: any){ setFxError(e?.message || String(e)) }
+                                      finally{ setInitLoading(false) }
+                                    }}
+                                    disabled={initLoading}
+                                  >
+                                    {initLoading ? 'Initializing…' : 'Init shares (Backend)'}
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={handleInitSharesWithWallet}
+                                    disabled={initWalletLoading || !walletAdapter.publicKey}
+                                  >
+                                    {initWalletLoading ? 'Initializing…' : 'Init shares (Wallet)'}
+                                  </Button>
+                                )}
+                                {fxError ? <span className="text-[11px] text-red-600">{fxError}</span> : null}
+                              </>
+                            )
+                          }
+                          return (
+                            <>
+                              <div className="w-40">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.000001"
+                                  title="Amount in USDC (6 decimals). Converted to base units on submit."
+                                  value={fracAmount}
+                                  onChange={(e) => setFracAmount(e.target.value)}
+                                  placeholder="Amount (USDC)"
+                                  className="h-8 text-[11px]"
+                                />
+                              </div>
+                              {mode === 'backend' ? (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={async () => {
+                                    if (!selected) return
+                                    const n = Number(fracAmount)
+                                    if (!Number.isFinite(n) || n <= 0) { setFxError('Enter a valid amount'); return }
+                                    const base = Math.round(n * 1_000_000)
+                                    setFxError(null)
+                                    setFxLoading(true)
+                                    try{
+                                      const r = await fetch(`${backend}/api/invoice/${selected}/fund-fractional`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json', ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) },
+                                        body: JSON.stringify({ amount: String(base) })
+                                      })
+                                      const j = await r.json()
+                                      if (!j.ok) throw new Error(j.error || 'fund failed')
+                                      show({ text: 'Fund fraction submitted', href: `https://explorer.solana.com/tx/${j.tx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+                                      setFracAmount('')
+                                      await loadDetail(selected)
+                                      await load()
+                                    }catch(e: any){ setFxError(e?.message || String(e)) }
+                                    finally{ setFxLoading(false) }
+                                  }}
+                                  disabled={fxLoading}
+                                >
+                                  {fxLoading ? 'Funding…' : 'Fund fraction (Backend)'}
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={handleFundFractionWithWallet}
+                                  disabled={fxWalletLoading || !walletAdapter.publicKey}
+                                >
+                                  {fxWalletLoading ? 'Funding…' : 'Fund fraction (Wallet)'}
+                                </Button>
+                              )}
+                              {fxError ? <span className="text-[11px] text-red-600">{fxError}</span> : null}
+                            </>
+                          )
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Positions */}
+                    <div className="border-t border-slate-100 pt-4">
+                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Positions</h3>
+                      <div className="text-xs text-slate-700">
+                        {positions.length === 0 ? (
+                          <span className="text-slate-500">None</span>
+                        ) : (
+                          <div className="grid gap-2">
+                            {positions.map((p) => {
+                              const balanceLabel = (() => {
+                                try {
+                                  const n = Number(p.amount) / 1_000_000
+                                  return `${n.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares`
+                                } catch {
+                                  return `${p.amount} shares`
+                                }
+                              })()
+                              return (
+                                <div
+                                  key={p.wallet}
+                                  className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="break-all font-mono text-xs text-slate-800">{p.wallet}</span>
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-slate-700">
+                                    <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                                      Balance
+                                    </span>
+                                    <span className="font-medium">{balanceLabel}</span>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Positions history */}
+                    <div className="border-t border-slate-100 pt-4">
+                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Positions history</h3>
+                      <div className="text-xs text-slate-700">
+                        <div className="mb-2 flex items-center gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => selected && loadHistory(selected)}
+                            loading={historyLoading}
+                          >
+                            Refresh history
+                          </Button>
+                        </div>
+                        {history.length === 0 ? (
+                          <div className="text-slate-500">No recent changes</div>
+                        ) : (
+                          <div className="mt-1 grid gap-2">
+                            {history.map((h: { wallet: string; delta: string; newAmount: string; ts: number }, i: number) => {
+                              const parsed = (() => {
+                                try {
+                                  const d = Number(h.delta) / 1_000_000
+                                  const n = Number(h.newAmount) / 1_000_000
+                                  return {
+                                    deltaLabel: `${d >= 0 ? '+' : ''}${d.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares`,
+                                    newLabel: `${n.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares`,
+                                    positive: d > 0,
+                                    negative: d < 0,
+                                  }
+                                } catch {
+                                  return {
+                                    deltaLabel: `${h.delta} shares`,
+                                    newLabel: `${h.newAmount} shares`,
+                                    positive: false,
+                                    negative: false,
+                                  }
+                                }
+                              })()
+                              const when = new Date(h.ts).toLocaleString()
+                              const changeBadgeClasses =
+                                'rounded-full px-2 py-0.5 text-[11px] font-medium ' +
+                                (parsed.positive
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : parsed.negative
+                                  ? 'bg-rose-50 text-rose-700'
+                                  : 'bg-slate-100 text-slate-700')
+                              return (
+                                <div
+                                  key={i}
+                                  className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="break-all font-mono text-xs text-slate-800">{h.wallet}</span>
+                                    <span className="text-[11px] text-slate-500">{when}</span>
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                                        Change
+                                      </span>
+                                      <span className={changeBadgeClasses}>{parsed.deltaLabel}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-slate-600">
+                                      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                                        New balance
+                                      </span>
+                                      <span className="font-medium">{parsed.newLabel}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
           </div>
         </div>
       ) : null}

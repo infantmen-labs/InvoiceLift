@@ -5,6 +5,10 @@ import { AnchorProvider, BN, Program, web3, Idl } from '@coral-xyz/anchor';
 import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, getAccount } from '@solana/spl-token';
 import { useSignerMode } from '../state/signerMode';
 import { useToast } from '../components/Toast';
+import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { FormGroup } from '../components/ui/FormGroup';
 
 const backend = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:8080';
 
@@ -15,70 +19,10 @@ export function FundInvoice(){
   const { connection } = useConnection();
   const { mode, adminWallet } = useSignerMode();
   const { show } = useToast();
-  const [isSeller, setIsSeller] = useState(false);
 
   function toBaseUnits(v: string){
     return v.includes('.') ? Math.round(Number(v) * 1e6).toString() : v;
   }
-  
-  async function handleSettleWithWallet(){
-    if(!result?.invoice || !result?.lastAmount) return;
-    if(!wallet.publicKey) { setResult({ ...result, error: 'Connect wallet first' }); return; }
-    try{
-      const invRes = await fetch(`${backend}/api/invoice/${result.invoice}`);
-      const invJson = await invRes.json();
-      if (!invJson.ok) throw new Error(invJson.error || 'fetch invoice failed');
-      const sellerStr: string = invJson.invoice.seller;
-      if (!sellerStr || sellerStr !== wallet.publicKey.toBase58()) throw new Error('Only seller can settle');
-
-      const idlRes = await fetch(`${backend}/idl/invoice_manager`);
-      const idl = await idlRes.json();
-      const provider = new AnchorProvider(connection, wallet as any, { commitment: 'confirmed' });
-      const program = new Program(idl as Idl, provider as any) as Program;
-      const invoicePk = new web3.PublicKey(result.invoice);
-      const usdcMint = new web3.PublicKey(invJson.invoice.usdcMint);
-      const seller = wallet.publicKey;
-      const [escrowAuthority] = web3.PublicKey.findProgramAddressSync([new TextEncoder().encode('escrow'), invoicePk.toBuffer()], program.programId);
-      const escrowToken = await getAssociatedTokenAddress(usdcMint, escrowAuthority, true);
-      const sellerAta = await getAssociatedTokenAddress(usdcMint, seller);
-
-      const tx = await (program.methods as any)
-        .setSettled(new BN(String(result.lastAmount)))
-        .accounts({
-          invoice: invoicePk,
-          operator: seller,
-          sellerAta,
-          escrowToken,
-          escrowAuthority,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .transaction();
-      tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-      tx.feePayer = wallet.publicKey;
-      const signed = await wallet.signTransaction!(tx);
-      const sig = await connection.sendRawTransaction(signed.serialize());
-      await connection.confirmTransaction(sig, 'confirmed');
-      show({ text: 'Settle submitted', href: `https://explorer.solana.com/tx/${sig}?cluster=devnet`, linkText: 'View Tx', kind: 'success' });
-      const r2 = await fetch(`${backend}/api/invoice/${result.invoice}`);
-      const j2 = await r2.json();
-      const status = j2?.invoice?.status ? Object.keys(j2.invoice.status)[0] : 'unknown';
-      setResult({ ...result, settleTx: sig, status });
-    }catch(err: any){
-      setResult({ ...result, error: err?.message || String(err) });
-    }
-  }
-
-  useEffect(() => {
-    (async () => {
-      if (!result?.invoice || !wallet.publicKey) { setIsSeller(false); return }
-      try{
-        const invRes = await fetch(`${backend}/api/invoice/${result.invoice}`)
-        const invJson = await invRes.json()
-        const sellerStr: string = invJson?.invoice?.seller || ''
-        setIsSeller(!!sellerStr && sellerStr === wallet.publicKey!.toBase58())
-      }catch{ setIsSeller(false) }
-    })()
-  }, [result?.invoice, wallet.publicKey])
 
   async function handleFund(e: React.FormEvent<HTMLFormElement>){
     e.preventDefault();
@@ -208,27 +152,99 @@ export function FundInvoice(){
     }
   }
   return (
-    <form onSubmit={handleFund} style={{ display: 'grid', gap: 8 }}>
-      <h2>Fund Invoice</h2>
-      <input name="invoice" placeholder="Invoice ID" />
-      <input name="amount" placeholder="Amount (USDC)" />
-      <div style={{ display: 'flex', gap: 8 }}>
-        {mode === 'backend' ? (
-          <>
-            <button type="submit" disabled={loading}>{loading ? 'Funding...' : 'Fund'}</button>
-            <button type="button" onClick={handleSettle} disabled={loading || !result?.invoice}>Settle (Webhook)</button>
-          </>
-        ) : (
-          <>
-            <button type="button" onClick={handleFundWithWallet} disabled={loading || !wallet.publicKey}>Fund with Wallet</button>
-            <button type="button" onClick={handleSettleWithWallet} disabled={loading || !result?.invoice || !isSeller}>Settle with Wallet</button>
-          </>
-        )}
+    <div className="mx-auto mt-6 max-w-xl space-y-4">
+      <div>
+        <h1 className="text-lg font-semibold text-slate-900">Fund invoice</h1>
+        <p className="text-xs text-slate-500">
+          Send USDC into the invoice escrow. Settlement is performed by the backend relayer via the payment webhook
+          once off-chain payment is confirmed; it is not executed directly by the connected wallet.
+        </p>
       </div>
-      {result?.error && <div style={{ color: 'red' }}>{result.error}</div>}
-      {result?.fundTx && <a href={`https://explorer.solana.com/tx/${result.fundTx}?cluster=devnet`} target="_blank">Fund Tx</a>}
-      {result?.settleTx && <a href={`https://explorer.solana.com/tx/${result.settleTx}?cluster=devnet`} target="_blank">Settle Tx</a>}
-      {result?.status && <div>Status: {result.status}</div>}
-    </form>
+      <Card>
+        <CardHeader>
+          <CardTitle>Funding details</CardTitle>
+        </CardHeader>
+        <CardBody>
+          <form onSubmit={handleFund} className="grid gap-4 text-sm">
+            <FormGroup
+              label="Invoice ID"
+              htmlFor="invoice"
+              required
+              help="Invoice public key of the invoice you want to fund."
+            >
+              <Input id="invoice" name="invoice" placeholder="Invoice public key" required />
+            </FormGroup>
+            <FormGroup
+              label="Amount (USDC)"
+              htmlFor="amount"
+              required
+              help="Displayed in USDC, converted to 6-decimal base units on submit."
+            >
+              <Input id="amount" name="amount" placeholder="e.g. 5.0" required />
+            </FormGroup>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {mode === 'backend' ? (
+                <>
+                  <Button type="submit" loading={loading}>
+                    {loading ? 'Funding…' : 'Fund (backend signer)'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleSettle}
+                    disabled={loading || !result?.invoice}
+                  >
+                    Settle (webhook)
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleFundWithWallet}
+                    disabled={loading || !wallet.publicKey}
+                    loading={loading}
+                  >
+                    {wallet.publicKey ? 'Fund with wallet' : 'Connect wallet to fund'}
+                  </Button>
+                </>
+              )}
+            </div>
+            {result?.error && <div className="text-xs text-red-600">{result.error}</div>}
+            {(result?.fundTx || result?.settleTx || result?.status) && (
+              <div className="mt-2 grid gap-1 text-xs text-slate-800">
+                {result.fundTx && (
+                  <a
+                    href={`https://explorer.solana.com/tx/${result.fundTx}?cluster=devnet`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-brand hover:text-brand-dark"
+                  >
+                    Fund transaction
+                  </a>
+                )}
+                {result.settleTx && (
+                  <a
+                    href={`https://explorer.solana.com/tx/${result.settleTx}?cluster=devnet`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-brand hover:text-brand-dark"
+                  >
+                    Settle transaction
+                  </a>
+                )}
+                {result.status && (
+                  <div className="text-slate-800">
+                    <span className="text-slate-500">Status:</span>{' '}
+                    <span>{result.status}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </form>
+        </CardBody>
+      </Card>
+    </div>
   );
 }

@@ -11,7 +11,7 @@ import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, getMint, createApproveChec
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { resolve } from 'path';
-import { initDb, upsertInvoiceFromChain, saveTxLog, getInvoiceRow, listInvoices, hasIdempotencyKey, recordWebhookEvent, markWebhookProcessed, getPositionsCache, setPositionsCache, clearPositionsCache, getPositionsHistory, listInvoicesWithSharesMint, createListing, getListing, listListingsByInvoice, listListingsBySeller, cancelListing, fillListingPartial, listOpenListings, upsertKycRecord, getKycRecord, insertDocHash, listDocHashes, upsertCreditScore, getCreditScore } from './db';
+import { initDb, upsertInvoiceFromChain, saveTxLog, getInvoiceRow, listInvoices, countInvoices, hasIdempotencyKey, recordWebhookEvent, markWebhookProcessed, getPositionsCache, setPositionsCache, clearPositionsCache, getPositionsHistory, listInvoicesWithSharesMint, createListing, getListing, listListingsByInvoice, listListingsBySeller, cancelListing, fillListingPartial, listOpenListings, upsertKycRecord, getKycRecord, insertDocHash, listDocHashes, upsertCreditScore, getCreditScore } from './db';
 import { logger } from './logger';
 import { validateConfig } from './config';
 import { KycSchema, DocSchema, ScoreSchema, WebhookPaymentSchema, ListingCreateSchema, ListingCancelSchema, ListingFillSchema } from './validation';
@@ -71,6 +71,56 @@ async function setRecentBlockhashSafe(tx: web3.Transaction, conn: web3.Connectio
   } catch {
     tx.recentBlockhash = '11111111111111111111111111111111';
   }
+}
+
+async function computeInvoicePositions(invoicePkStr: string){
+  const program = getProgram();
+  const invoicePk = new web3.PublicKey(invoicePkStr);
+  const data: any = await fetchInvoice(program, invoicePk);
+  const DEFAULT_PK = '11111111111111111111111111111111';
+
+  // If shares_mint exists, derive positions from SPL token balances
+  const sharesMintStr: string = data.sharesMint && data.sharesMint.toBase58 ? data.sharesMint.toBase58() : String(data.sharesMint || '');
+  if (sharesMintStr && sharesMintStr !== DEFAULT_PK) {
+    // Try cache first
+    const cached = getPositionsCache(invoicePkStr);
+    const ttlMs = Number(process.env.POSITIONS_TTL_MS ?? '30000');
+    if (cached && (Date.now() - cached.updatedAt) < ttlMs) {
+      return cached.positions as Array<{ wallet: string; amount: string }>;
+    }
+
+    const conn = (program.provider as any).connection as web3.Connection;
+    const resp = await conn.getParsedProgramAccounts(TOKEN_PROGRAM_ID, {
+      filters: [
+        { dataSize: 165 },
+        { memcmp: { offset: 0, bytes: sharesMintStr } },
+      ],
+    });
+    const byOwner = new Map<string, bigint>();
+    for (const it of resp) {
+      try {
+        const info: any = (it.account as any).data?.parsed?.info;
+        const owner: string = info?.owner || '';
+        const amtStr: string = info?.tokenAmount?.amount ?? '0';
+        const amt = BigInt(amtStr);
+        if (owner && amt > 0n) {
+          byOwner.set(owner, (byOwner.get(owner) ?? 0n) + amt);
+        }
+      } catch {}
+    }
+    const positions = Array.from(byOwner.entries()).map(([wallet, amount]) => ({ wallet, amount: amount.toString() }));
+    try { setPositionsCache(invoicePkStr, positions); } catch {}
+    return positions;
+  }
+
+  // Fallback (pre-fractional): single investor based on funded_amount
+  const investor = (data.investor || '').toBase58 ? data.investor.toBase58() : String(data.investor || '');
+  const fundedAmount = data.fundedAmount?.toString?.() ?? String(data.fundedAmount ?? '0');
+  const positions: Array<{ wallet: string; amount: string }> = [];
+  if (investor && investor !== DEFAULT_PK && BigInt(fundedAmount) > 0n) {
+    positions.push({ wallet: investor, amount: fundedAmount });
+  }
+  return positions;
 }
 
 app.get('/healthz', (_req: Request, res: Response) => {
@@ -567,7 +617,40 @@ app.post('/api/listings', async (req: Request, res: Response) => {
       const ok = verifySig(msg, seller, signature);
       if (!ok) return res.status(401).json({ ok: false, error: 'bad signature' });
     }
-    const row = createListing({ invoicePk, seller, price: String(price), qty: String(qty), signature: signature || null });
+    // Enforce that total open listings do not exceed on-chain share balance for this invoice
+    let qtyBase: bigint
+    try {
+      qtyBase = BigInt(String(qty));
+    } catch {
+      return res.status(400).json({ ok: false, error: 'invalid qty' });
+    }
+    if (qtyBase <= 0n) return res.status(400).json({ ok: false, error: 'qty must be > 0' });
+
+    const positions = await computeInvoicePositions(String(invoicePk));
+    const sellerPos = positions.find((p: any) => p.wallet === seller);
+    const balanceBase = sellerPos ? (() => { try { return BigInt(String(sellerPos.amount)); } catch { return 0n } })() : 0n;
+    if (balanceBase <= 0n) {
+      return res.status(400).json({ ok: false, error: 'seller has no shares for this invoice' });
+    }
+
+    const existing = listListingsByInvoice(String(invoicePk), 'Open').filter((l) => l.seller === seller);
+    let reservedBase = 0n;
+    for (const l of existing) {
+      try {
+        const remain = l.remainingQty ?? l.qty;
+        reservedBase += BigInt(String(remain));
+      } catch {}
+    }
+    const availableBase = balanceBase > reservedBase ? balanceBase - reservedBase : 0n;
+    if (qtyBase > availableBase) {
+      const maxShares = Number(availableBase) / 1_000_000;
+      const msg = maxShares > 0
+        ? `qty exceeds available shares (${maxShares.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares)`
+        : 'no available shares to list for this invoice';
+      return res.status(400).json({ ok: false, error: msg });
+    }
+
+    const row = createListing({ invoicePk, seller, price: String(price), qty: qtyBase.toString(), signature: signature || null });
     res.status(200).json({ ok: true, listing: row });
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e?.message || String(e) });
@@ -725,8 +808,29 @@ app.get('/idl/invoice_manager', (_req: Request, res: Response) => {
 app.get('/api/invoices', async (req: Request, res: Response) => {
   try {
     const { status, wallet } = req.query as { status?: string; wallet?: string };
-    const rows = listInvoices({ status, wallet });
-    res.status(200).json({ ok: true, invoices: rows });
+    const pageRaw = (req.query.page as string | undefined) ?? '1';
+    const pageSizeRaw = (req.query.pageSize as string | undefined) ?? '50';
+    let page = Number(pageRaw);
+    if (!Number.isFinite(page) || page <= 0) page = 1;
+    let pageSize = Number(pageSizeRaw);
+    if (!Number.isFinite(pageSize) || pageSize <= 0) pageSize = 50;
+    pageSize = Math.min(Math.max(pageSize, 1), 200);
+    const offset = (page - 1) * pageSize;
+
+    const total = countInvoices({ status, wallet });
+    const rows = listInvoices({ status, wallet, limit: pageSize, offset });
+    const pageCount = total > 0 ? Math.ceil(total / pageSize) : 0;
+
+    res.status(200).json({
+      ok: true,
+      invoices: rows,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        pageCount,
+      },
+    });
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e?.message || String(e) });
   }
@@ -888,54 +992,11 @@ app.get('/api/invoice/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Derive positions for an invoice (pre-fractional: single investor if funded)
+// Derive positions for an invoice (fractional or pre-fractional)
 app.get('/api/invoice/:id/positions', async (req: Request, res: Response) => {
   try {
-    const program = getProgram();
-    const invoicePk = new web3.PublicKey(req.params.id);
-    const data: any = await fetchInvoice(program, invoicePk);
-    const DEFAULT_PK = '11111111111111111111111111111111';
-
-    // If shares_mint exists, derive positions from SPL token balances
-    const sharesMintStr: string = data.sharesMint && data.sharesMint.toBase58 ? data.sharesMint.toBase58() : String(data.sharesMint || '');
-    if (sharesMintStr && sharesMintStr !== DEFAULT_PK) {
-      // Try cache first
-      const cached = getPositionsCache(invoicePk.toBase58());
-      const ttlMs = Number(process.env.POSITIONS_TTL_MS ?? '30000');
-      if (cached && (Date.now() - cached.updatedAt) < ttlMs) {
-        return res.status(200).json({ ok: true, positions: cached.positions });
-      }
-      const conn = (program.provider as any).connection as web3.Connection;
-      const resp = await conn.getParsedProgramAccounts(TOKEN_PROGRAM_ID, {
-        filters: [
-          { dataSize: 165 },
-          { memcmp: { offset: 0, bytes: sharesMintStr } },
-        ],
-      });
-      const byOwner = new Map<string, bigint>();
-      for (const it of resp) {
-        try {
-          const info: any = (it.account as any).data?.parsed?.info;
-          const owner: string = info?.owner || '';
-          const amtStr: string = info?.tokenAmount?.amount ?? '0';
-          const amt = BigInt(amtStr);
-          if (owner && amt > 0n) {
-            byOwner.set(owner, (byOwner.get(owner) ?? 0n) + amt);
-          }
-        } catch {}
-      }
-      const positions = Array.from(byOwner.entries()).map(([wallet, amount]) => ({ wallet, amount: amount.toString() }));
-      try { setPositionsCache(invoicePk.toBase58(), positions) } catch {}
-      return res.status(200).json({ ok: true, positions });
-    }
-
-    // Fallback (pre-fractional): single investor based on funded_amount
-    const investor = (data.investor || '').toBase58 ? data.investor.toBase58() : String(data.investor || '');
-    const fundedAmount = data.fundedAmount?.toString?.() ?? String(data.fundedAmount ?? '0');
-    const positions = [] as Array<{ wallet: string; amount: string }>;
-    if (investor && investor !== DEFAULT_PK && BigInt(fundedAmount) > 0n) {
-      positions.push({ wallet: investor, amount: fundedAmount });
-    }
+    const invoicePkStr = String(req.params.id);
+    const positions = await computeInvoicePositions(invoicePkStr);
     res.status(200).json({ ok: true, positions });
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e?.message || String(e) });

@@ -3,8 +3,11 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { Transaction, PublicKey } from '@solana/web3.js'
 import { getAssociatedTokenAddress } from '@solana/spl-token'
 import { useToast } from '../components/Toast'
+import { Button } from '../components/ui/Button'
+import { Input } from '../components/ui/Input'
 
 const backend = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:8080'
+const PAGE_SIZE = 10
 
 type Listing = { id: number; invoicePk: string; seller: string; price: string; qty: string; remainingQty: string; status: string; createdAt: number; escrowDeposited?: boolean; onChain?: boolean }
 
@@ -26,6 +29,7 @@ export function Marketplace(){
   const [initV2LoadingId, setInitV2LoadingId] = useState<number | null>(null)
   const allowanceEnabled = (import.meta as any).env.VITE_FEATURE_ALLOWANCE_FILLS !== 'false'
   const [allowances, setAllowances] = useState<Record<number, { sellerShares?: { delegate?: string; amount?: string }; buyerUsdc?: { delegate?: string; amount?: string } }>>({})
+  const [page, setPage] = useState(1)
 
   function bytesToBase64(bytes: Uint8Array){
     let bin = ''
@@ -316,85 +320,265 @@ export function Marketplace(){
     return items.filter((it) => it.invoicePk.includes(f))
   }, [items, invoiceFilter])
 
+  const pageCount = filtered.length ? Math.ceil(filtered.length / PAGE_SIZE) : 0
+  const currentPage = pageCount ? Math.min(page, pageCount) : 1
+  const startIndex = (currentPage - 1) * PAGE_SIZE
+  const pagedListings = filtered.slice(startIndex, startIndex + PAGE_SIZE)
+
+  useEffect(() => { setPage(1) }, [invoiceFilter, mineOnly])
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0 }}>Marketplace</h2>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input value={invoiceFilter} onChange={(e) => setInvoiceFilter(e.target.value)} placeholder="Filter by invoice" style={{ width: 240 }} />
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} disabled={!walletStr} /> My listings only
+    <div className="mt-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="m-0 text-lg font-semibold text-slate-900">Marketplace</h2>
+          <p className="text-xs text-slate-500">Browse open listings and trade invoice shares.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="w-60">
+            <Input
+              value={invoiceFilter}
+              onChange={(e) => setInvoiceFilter(e.target.value)}
+              placeholder="Filter by invoice"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={mineOnly}
+              onChange={(e) => setMineOnly(e.target.checked)}
+              disabled={!walletStr}
+              className="h-3 w-3 rounded border-slate-300 bg-white text-brand focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand disabled:opacity-40"
+            />
+            My listings only
           </label>
-          <button onClick={load} disabled={loading}>{loading ? 'Loading...' : 'Refresh'}</button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={load}
+            loading={loading}
+          >
+            Refresh
+          </Button>
         </div>
       </div>
       {filtered.length === 0 ? (
-        <div style={{ marginTop: 8 }}>No listings</div>
+        <div className="mt-2 rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
+          No listings
+        </div>
       ) : (
-        <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', fontWeight: 600 }}>
+        <div className="mt-3 grid gap-2">
+          <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,2fr)] text-[11px] font-medium uppercase tracking-wide text-slate-500 sm:grid">
             <div>Invoice</div>
             <div>Seller</div>
             <div>Price</div>
             <div>Remaining</div>
             <div>Actions</div>
           </div>
-          {filtered.map((l) => {
+          {pagedListings.map((l) => {
             const price = fmt6(l.price)
             const remain = fmt6(l.remainingQty)
             const isMine = walletStr && walletStr === l.seller
             const canCancel = isMine && l.status === 'Open'
             const canFill = l.status === 'Open'
             return (
-              <div key={l.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontFamily: 'monospace' }}>{l.invoicePk}</div>
-                <div style={{ fontFamily: 'monospace' }}>{l.seller} {isMine ? <span style={{ color: '#10b981', fontSize: '0.85em' }}>(you)</span> : null}</div>
-                <div>{price} USDC/share</div>
-                <div>{remain} shares {l.escrowDeposited ? <span style={{ color: '#6b7280', fontSize: '0.85em' }}>(deposited)</span> : null}</div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {canCancel ? <button onClick={() => handleCancel(l.id)}>Cancel</button> : null}
-                  {!allowanceEnabled && canCancel && !depositedIds[l.id] && !l.escrowDeposited ? (
-                    <button onClick={() => handleDepositOnchain(l.id)} disabled={depositLoadingId === l.id}>{depositLoadingId === l.id ? 'Depositing...' : 'Deposit Shares'}</button>
-                  ) : null}
-                  {allowanceEnabled && isMine && l.status === 'Open' && !l.onChain ? (
-                    <button onClick={() => handleInitListingV2(l.id)} disabled={initV2LoadingId === l.id}>{initV2LoadingId === l.id ? 'Initializing...' : 'Init On-chain (V2)'}</button>
-                  ) : null}
-                  {allowanceEnabled && isMine && l.status === 'Open' ? (
-                    <button onClick={() => handleApproveSharesV2(l.id)} disabled={approveSharesLoadingId === l.id}>{approveSharesLoadingId === l.id ? 'Approving...' : 'Approve Shares'}</button>
-                  ) : null}
-                  {allowanceEnabled && isMine && l.status === 'Open' ? (
-                    <button onClick={() => handleRevokeSharesV2(l.id)}>Revoke Shares</button>
-                  ) : null}
-                  {allowanceEnabled && isMine && l.status === 'Open' ? (
-                    <button onClick={() => handleCancelOnchainV2(l.id)}>Cancel On-chain (V2)</button>
-                  ) : null}
-                  {allowanceEnabled && isMine ? (
-                    <span style={{ color: '#6b7280', fontSize: '0.85em' }}>Shares allowance: {allowances[l.id]?.sellerShares?.delegate ? short(allowances[l.id]?.sellerShares?.delegate) : '—'} {allowances[l.id]?.sellerShares?.amount ? `(${n6(allowances[l.id]?.sellerShares?.amount)})` : ''}</span>
-                  ) : null}
+              <div
+                key={l.id}
+                className="grid grid-cols-1 items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,2fr)]"
+              >
+                <div className="font-mono break-all text-slate-800">{l.invoicePk}</div>
+                <div className="font-mono break-all text-slate-700">
+                  {l.seller} {isMine ? <span className="ml-1 text-[10px] text-emerald-400">(you)</span> : null}
+                </div>
+                <div className="text-slate-900">
+                  {price} <span className="text-slate-500">USDC/share</span>
+                </div>
+                <div className="text-slate-900">
+                  {remain} <span className="text-slate-500">shares</span>{' '}
+                  {l.escrowDeposited ? <span className="text-[10px] text-slate-500">(deposited)</span> : null}
+                </div>
+                <div className="flex flex-col gap-1 text-xs text-slate-700">
+                  {isMine && (
+                    <>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {canCancel && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCancel(l.id)}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                        {!allowanceEnabled && canCancel && !depositedIds[l.id] && !l.escrowDeposited && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleDepositOnchain(l.id)}
+                            loading={depositLoadingId === l.id}
+                          >
+                            Deposit shares
+                          </Button>
+                        )}
+                        {allowanceEnabled && l.status === 'Open' && !l.onChain && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleInitListingV2(l.id)}
+                            loading={initV2LoadingId === l.id}
+                          >
+                            Init on-chain (V2)
+                          </Button>
+                        )}
+                        {allowanceEnabled && l.status === 'Open' && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleApproveSharesV2(l.id)}
+                              loading={approveSharesLoadingId === l.id}
+                            >
+                              Approve shares
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRevokeSharesV2(l.id)}
+                            >
+                              Revoke shares
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleCancelOnchainV2(l.id)}
+                            >
+                              Cancel on-chain (V2)
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                      {allowanceEnabled && (
+                        <div className="text-[11px] text-slate-500">
+                          Shares allowance:{' '}
+                          {allowances[l.id]?.sellerShares?.delegate
+                            ? short(allowances[l.id]?.sellerShares?.delegate)
+                            : '—'}{' '}
+                          {allowances[l.id]?.sellerShares?.amount
+                            ? `(${n6(allowances[l.id]?.sellerShares?.amount)})`
+                            : ''}
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   {canFill ? (
                     <>
-                      <input type="number" min="0" step="0.000001" title="Quantity to buy in shares (6 decimals)." value={fillQtyById[l.id] || ''} onChange={(e) => setFillQtyById((m) => ({ ...m, [l.id]: e.target.value }))} placeholder="Qty (shares)" style={{ width: 100 }} />
-                      {allowanceEnabled ? (
-                        <>
-                          <button onClick={() => handleApproveUsdcV2(l.id)} disabled={approveUsdcLoadingId === l.id}>{approveUsdcLoadingId === l.id ? 'Approving...' : 'Approve USDC'}</button>
-                          <button onClick={() => handleRevokeUsdcV2(l.id)}>Revoke USDC</button>
-                          <button onClick={() => handleFulfillOnchainV2(l.id)} disabled={fillLoadingId === l.id}>{fillLoadingId === l.id ? 'Filling...' : 'Fill On-chain (V2)'}</button>
-                          <span style={{ color: '#6b7280', fontSize: '0.85em' }}>USDC allowance: {allowances[l.id]?.buyerUsdc?.delegate ? short(allowances[l.id]?.buyerUsdc?.delegate) : '—'} {allowances[l.id]?.buyerUsdc?.amount ? `(${n6(allowances[l.id]?.buyerUsdc?.amount)})` : ''}</span>
-                        </>
-                      ) : (
-                        <button onClick={() => handleFulfillOnchain(l.id)} disabled={fillLoadingId === l.id}>{fillLoadingId === l.id ? 'Filling...' : 'Fill On-chain'}</button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="w-28">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.000001"
+                            title="Quantity to buy in shares (6 decimals)."
+                            value={fillQtyById[l.id] || ''}
+                            onChange={(e) => setFillQtyById((m) => ({ ...m, [l.id]: e.target.value }))}
+                            placeholder="Qty (shares)"
+                            className="h-8 text-[11px]"
+                          />
+                        </div>
+                        {allowanceEnabled ? (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleApproveUsdcV2(l.id)}
+                              loading={approveUsdcLoadingId === l.id}
+                            >
+                              Approve USDC
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRevokeUsdcV2(l.id)}
+                            >
+                              Revoke USDC
+                            </Button>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => handleFulfillOnchainV2(l.id)}
+                              loading={fillLoadingId === l.id}
+                            >
+                              Fill on-chain (V2)
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleFulfillOnchain(l.id)}
+                            loading={fillLoadingId === l.id}
+                          >
+                            Fill on-chain
+                          </Button>
+                        )}
+                      </div>
+                      {allowanceEnabled && (
+                        <div className="text-[11px] text-slate-500">
+                          USDC allowance:{' '}
+                          {allowances[l.id]?.buyerUsdc?.delegate
+                            ? short(allowances[l.id]?.buyerUsdc?.delegate)
+                            : '—'}{' '}
+                          {allowances[l.id]?.buyerUsdc?.amount
+                            ? `(${n6(allowances[l.id]?.buyerUsdc?.amount)})`
+                            : ''}
+                        </div>
                       )}
                     </>
                   ) : (
-                    <>
-                      <span>{l.status}</span>
-                      {canCancel ? <button onClick={() => handleCancelOnchain(l.id)}>Cancel On-chain</button> : null}
-                    </>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-slate-500">{l.status}</span>
+                    </div>
                   )}
                 </div>
               </div>
             )
           })}
+          {pageCount > 1 && (
+            <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
+              <div>
+                Showing {startIndex + 1}–{Math.min(startIndex + pagedListings.length, filtered.length)} of {filtered.length}
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={currentPage === 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Prev
+                </Button>
+                {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
+                  <Button
+                    key={p}
+                    variant={p === currentPage ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </Button>
+                ))}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={currentPage === pageCount}
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

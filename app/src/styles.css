@@ -1,3 +1,26 @@
-body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-button { cursor: pointer; }
-input { padding: 8px; border: 1px solid #ddd; border-radius: 6px; }
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Design tokens from docs/dev/design.md */
+  --color-primary: #7c3aed;
+  --color-success: #10b981;
+  --color-danger: #ef4444;
+  --color-bg-primary: #f8fafc;
+  --color-bg-secondary: #f1f5f9;
+  --color-border: #cbd5e1;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 font-sans;
+}
+
+button {
+  cursor: pointer;
+}

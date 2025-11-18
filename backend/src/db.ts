@@ -243,7 +243,7 @@ export function getInvoiceRow(invoicePk: string){
   return mapRowToCamel(row)
 }
 
-export function listInvoices(opts: { status?: string; wallet?: string }){
+export function listInvoices(opts: { status?: string; wallet?: string; limit?: number; offset?: number }){
   const db = getDb()
   const { status, wallet } = opts
   let sql = 'SELECT * FROM invoices'
@@ -252,9 +252,24 @@ export function listInvoices(opts: { status?: string; wallet?: string }){
   if (status) { where.push('status = ?'); params.push(status) }
   if (wallet) { where.push('(seller = ? OR investor = ?)'); params.push(wallet, wallet) }
   if (where.length) sql += ' WHERE ' + where.join(' AND ')
-  sql += ' ORDER BY updated_at DESC LIMIT 200'
-  const rows = db.prepare(sql).all(...params)
+  const limit = typeof opts.limit === 'number' ? Math.min(Math.max(opts.limit, 1), 200) : 200
+  const offset = typeof opts.offset === 'number' && opts.offset > 0 ? opts.offset : 0
+  sql += ' ORDER BY updated_at DESC LIMIT ? OFFSET ?'
+  const rows = db.prepare(sql).all(...params, limit, offset)
   return rows.map(mapRowToCamel)
+}
+
+export function countInvoices(opts: { status?: string; wallet?: string }): number {
+  const db = getDb()
+  const { status, wallet } = opts
+  let sql = 'SELECT COUNT(*) as c FROM invoices'
+  const params: any[] = []
+  const where: string[] = []
+  if (status) { where.push('status = ?'); params.push(status) }
+  if (wallet) { where.push('(seller = ? OR investor = ?)'); params.push(wallet, wallet) }
+  if (where.length) sql += ' WHERE ' + where.join(' AND ')
+  const row = db.prepare(sql).get(...params) as { c?: number } | undefined
+  return row && typeof row.c === 'number' ? row.c : 0
 }
 
 export function hasIdempotencyKey(idemKey: string){

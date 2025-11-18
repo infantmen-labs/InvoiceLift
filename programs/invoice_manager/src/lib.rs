@@ -154,6 +154,10 @@ pub struct CreateListingV2<'info> {
 
     pub fn set_settled(ctx: Context<SetSettled>, amount: u64) -> Result<()> {
         let invoice = &mut ctx.accounts.invoice;
+        require!(amount > 0, InvoiceError::InvalidParameter);
+        require!(invoice.status == InvoiceStatus::Funded, InvoiceError::WrongStatus);
+        require!(invoice.funded_amount == amount, InvoiceError::Overfund);
+        require_keys_eq!(ctx.accounts.operator.key(), ctx.accounts.config.admin, InvoiceError::Unauthorized);
         require!(ctx.accounts.seller_ata.mint == invoice.usdc_mint, InvoiceError::MintMismatch);
         require!(ctx.accounts.escrow_token.mint == invoice.usdc_mint, InvoiceError::MintMismatch);
 
@@ -462,6 +466,16 @@ pub struct CreateListingV2<'info> {
         });
         Ok(())
     }
+    pub fn init_config(ctx: Context<InitConfig>, admin: Pubkey) -> Result<()> {
+        ctx.accounts.config.admin = admin;
+        Ok(())
+    }
+
+    pub fn update_config(ctx: Context<UpdateConfig>, new_admin: Pubkey) -> Result<()> {
+        require_keys_eq!(ctx.accounts.admin.key(), ctx.accounts.config.admin, InvoiceError::Unauthorized);
+        ctx.accounts.config.admin = new_admin;
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -556,6 +570,28 @@ pub struct FundInvoice<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitConfig<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + 32,
+        seeds = [b"config"],
+        bump,
+    )]
+    pub config: Account<'info, AdminConfig>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateConfig<'info> {
+    #[account(mut, seeds = [b"config"], bump)]
+    pub config: Account<'info, AdminConfig>,
+    pub admin: Signer<'info>,
+}
+
+#[derive(Accounts)]
 pub struct FulfillListingV2<'info> {
     pub invoice: Account<'info, Invoice>,
     #[account(mut)]
@@ -641,6 +677,8 @@ pub struct FundInvoiceFractional<'info> {
 pub struct SetSettled<'info> {
     #[account(mut)]
     pub invoice: Account<'info, Invoice>,
+    #[account(seeds = [b"config"], bump)]
+    pub config: Account<'info, AdminConfig>,
     pub operator: Signer<'info>, // later: require multisig / verified relayer
     #[account(
         mut,
@@ -781,6 +819,11 @@ pub struct CancelListing<'info> {
 }
 
 #[account]
+pub struct AdminConfig {
+    pub admin: Pubkey,
+}
+
+#[account]
 pub struct Invoice {
     pub seller: Pubkey,
     pub amount: u64,
@@ -826,4 +869,5 @@ pub enum InvoiceError {
     #[msg("Required delegate missing")] DelegateMissing,
     #[msg("Insufficient delegated allowance")] InsufficientAllowance,
     #[msg("Invalid parameter provided")] InvalidParameter,
+    #[msg("Unauthorized")] Unauthorized,
 }
