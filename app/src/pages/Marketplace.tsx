@@ -378,17 +378,26 @@ export function Marketplace(){
           {pagedListings.map((l) => {
             const price = fmt6(l.price)
             const remain = fmt6(l.remainingQty)
+            const total = fmt6(l.qty)
             const isMine = walletStr && walletStr === l.seller
             const canCancel = isMine && l.status === 'Open'
             const canFill = l.status === 'Open'
+            const statusColor =
+              l.status === 'Open'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : l.status === 'Filled'
+                ? 'border-slate-200 bg-slate-100 text-slate-700'
+                : l.status === 'Canceled'
+                ? 'border-rose-200 bg-rose-50 text-rose-700'
+                : 'border-slate-200 bg-slate-100 text-slate-700'
             return (
               <div
                 key={l.id}
-                className="grid grid-cols-1 items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,2fr)]"
+                className="grid grid-cols-1 items-start gap-3 rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-xs shadow-sm transition hover:border-brand/40 hover:shadow-md sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,2fr)]"
               >
-                <div className="font-mono break-all text-slate-800">{l.invoicePk}</div>
-                <div className="font-mono break-all text-slate-700">
-                  {l.seller} {isMine ? <span className="ml-1 text-[10px] text-emerald-400">(you)</span> : null}
+                <div className="font-mono text-slate-800" title={l.invoicePk}>{short(l.invoicePk)}</div>
+                <div className="font-mono text-slate-700" title={l.seller}>
+                  {short(l.seller)} {isMine ? <span className="ml-1 text-[10px] text-emerald-400">(you)</span> : null}
                 </div>
                 <div className="text-slate-900">
                   {price} <span className="text-slate-500">USDC/share</span>
@@ -397,9 +406,21 @@ export function Marketplace(){
                   {remain} <span className="text-slate-500">shares</span>{' '}
                   {l.escrowDeposited ? <span className="text-[10px] text-slate-500">(deposited)</span> : null}
                 </div>
-                <div className="flex flex-col gap-1 text-xs text-slate-700">
+                <div className="flex flex-col gap-2 text-xs text-slate-700">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+                    <span>
+                      {remain} / {total} shares listed · {price} USDC/share
+                    </span>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusColor}`}>
+                      {l.status}
+                    </span>
+                  </div>
                   {isMine && (
-                    <>
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2">
+                      <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
+                        <span>Seller actions</span>
+                        <span className="text-slate-400">{l.status}</span>
+                      </div>
                       <div className="flex flex-wrap items-center gap-2">
                         {canCancel && (
                           <Button
@@ -458,7 +479,7 @@ export function Marketplace(){
                         )}
                       </div>
                       {allowanceEnabled && (
-                        <div className="text-[11px] text-slate-500">
+                        <div className="mt-1 text-[11px] text-slate-500">
                           Shares allowance:{' '}
                           {allowances[l.id]?.sellerShares?.delegate
                             ? short(allowances[l.id]?.sellerShares?.delegate)
@@ -468,11 +489,15 @@ export function Marketplace(){
                             : ''}
                         </div>
                       )}
-                    </>
+                    </div>
                   )}
 
                   {canFill ? (
-                    <>
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2">
+                      <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
+                        <span>Buyer actions</span>
+                        <span className="text-slate-400">You pay in USDC</span>
+                      </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="w-28">
                           <Input
@@ -524,7 +549,7 @@ export function Marketplace(){
                         )}
                       </div>
                       {allowanceEnabled && (
-                        <div className="text-[11px] text-slate-500">
+                        <div className="mt-1 text-[11px] text-slate-500">
                           USDC allowance:{' '}
                           {allowances[l.id]?.buyerUsdc?.delegate
                             ? short(allowances[l.id]?.buyerUsdc?.delegate)
@@ -534,12 +559,8 @@ export function Marketplace(){
                             : ''}
                         </div>
                       )}
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-slate-500">{l.status}</span>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
             )

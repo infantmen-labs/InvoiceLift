@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Outlet } from 'react-router-dom';
 import { MintInvoice } from './pages/MintInvoice';
 import { FundInvoice } from './pages/FundInvoice';
 import { Invoices } from './pages/Invoices';
@@ -9,6 +9,7 @@ import { Admin } from './pages/Admin';
 import { SignerModeProvider } from './state/signerMode';
 import { ToastProvider } from './components/Toast';
 import { MainLayout } from './components/layout/MainLayout';
+import { Landing } from './pages/Landing';
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
   constructor(props: any) {
@@ -41,9 +42,18 @@ export default function App(){
     <ErrorBoundary>
       <ToastProvider>
         <SignerModeProvider>
-          <MainLayout>
-            <Routes>
-              <Route path="/" element={<Invoices />} />
+          <Routes>
+            {/* Public landing page */}
+            <Route path="/" element={<Landing />} />
+
+            {/* App routes wrapped in MainLayout */}
+            <Route
+              element={(
+                <MainLayout>
+                  <Outlet />
+                </MainLayout>
+              )}
+            >
               <Route path="/invoices" element={<Invoices />} />
               <Route path="/invoice/:id" element={<Invoices />} />
               <Route path="/marketplace" element={<Marketplace />} />
@@ -51,8 +61,8 @@ export default function App(){
               <Route path="/admin" element={<Admin />} />
               <Route path="/mint" element={<MintInvoice />} />
               <Route path="/fund" element={<FundInvoice />} />
-            </Routes>
-          </MainLayout>
+            </Route>
+          </Routes>
         </SignerModeProvider>
       </ToastProvider>
     </ErrorBoundary>
