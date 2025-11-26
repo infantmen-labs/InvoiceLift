@@ -331,26 +331,29 @@ export function Marketplace(){
     <div className="mt-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="m-0 text-lg font-semibold text-slate-900">Marketplace</h2>
-          <p className="text-xs text-slate-500">Browse open listings and trade invoice shares.</p>
+          <h2 className="m-0 text-lg font-semibold text-[#8437EB]">Marketplace</h2>
+          <p className="text-xs text-slate-300">Browse open listings and trade invoice shares.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="w-60">
+          <div className="card">
             <Input
+              className='bg'
               value={invoiceFilter}
               onChange={(e) => setInvoiceFilter(e.target.value)}
               placeholder="Filter by invoice"
             />
+            <div className="blob"></div>
           </div>
+
           <label className="flex items-center gap-2 text-xs text-slate-600">
             <input
               type="checkbox"
               checked={mineOnly}
               onChange={(e) => setMineOnly(e.target.checked)}
               disabled={!walletStr}
-              className="h-3 w-3 rounded border-slate-300 bg-white text-brand focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand disabled:opacity-40"
+              className="h-3 w-3 rounded border-slate-300 bg-white text-brand focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand disabled:opacity-40 " 
             />
-            My listings only
+            <span className='text-slate-300'>My listings only</span>
           </label>
           <Button
             variant="secondary"
@@ -363,8 +366,10 @@ export function Marketplace(){
         </div>
       </div>
       {filtered.length === 0 ? (
-        <div className="mt-2 rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
-          No listings
+        <div className="">
+          <div className="mt-2 rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
+            No listings
+          </div>
         </div>
       ) : (
         <div className="mt-3 grid gap-2">

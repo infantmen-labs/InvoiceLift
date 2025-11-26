@@ -652,23 +652,43 @@ export function Invoices() {
     return () => clearInterval(id)
   }, [selected, auto])
 
+
+
+       // Monitoring the window.innerWidth to make Sidebar Static
+      const [ windowWidth, setWindowWidth ]= useState<number>(window.innerWidth);
+  
+      useEffect(() => {
+        function watchWindowWidth() {
+          setWindowWidth(window.innerWidth)
+        }
+        window.addEventListener("resize", watchWindowWidth);
+  
+  
+        return function() {
+          window.removeEventListener("resize", watchWindowWidth)
+          console.log(windowWidth)
+        }
+      }, [windowWidth])
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        <Card className="flex-1 bg-white">
-          <CardHeader className="border-b border-slate-200 px-4 py-3">
+
+        <div className='cardInvoice1'>
+          <Card className="bgInvoice1 flex-1 bg-white">
+          <CardHeader className="border-b bg-[#ebebeb] px-4 py-3">
             <CardTitle>Filters</CardTitle>
           </CardHeader>
-          <CardBody className="flex flex-wrap items-center gap-3">
+          <CardBody className="flex flex-wrap items-center gap-3 ">
             <div className="w-32">
-              <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <Select className='bg-[#CCCBCB]' value={status} onChange={(e) => setStatus(e.target.value)}>
                 <option value="">All</option>
                 <option value="Open">Open</option>
                 <option value="Funded">Funded</option>
                 <option value="Settled">Settled</option>
               </Select>
             </div>
-            <div className="w-64 min-w-[220px] flex-1">
+            <div className="w-64 min-w-[220px] flex-1 ">
               <Input
                 value={walletFilter}
                 onChange={(e) => setWalletFilter(e.target.value)}
@@ -693,24 +713,46 @@ export function Invoices() {
               Auto refresh
             </label>
           </CardBody>
-        </Card>
+          </Card>
+          <div className="blobInvoice1"></div>
+        </div>
         <div className="grid w-full max-w-md flex-none grid-cols-1 gap-3 sm:grid-cols-3">
-          <StatCard label="Total invoices" value={items.length.toString()} />
-          <StatCard
-            label="Total amount"
-            value={`${stats.totalAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC`}
-          />
-          <StatCard
-            label="Avg funded"
-            value={`${stats.avgFundedPct.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
-          />
+
+          <div className='cardInvoice2'>
+            <div className='bgInvoice2'>
+              <StatCard label="Total invoices" value={items.length.toString()} />
+            </div>
+            <div className="blobInvoice2"></div>
+          </div>
+
+          <div className='cardInvoice2'>
+            <div className='bgInvoice2'>
+              <StatCard
+                label="Total amount"
+                value={`${stats.totalAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC`}
+              />
+            </div>
+            <div className="blobInvoice2"></div>
+          </div>
+
+          <div className='cardInvoice2'>
+            <div className='bgInvoice2'>
+              <StatCard
+                label="Avg funded"
+                value={`${stats.avgFundedPct.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
+              />
+            </div>
+            <div className="blobInvoice2"></div>
+          </div>
         </div>
       </div>
 
       <div className="overflow-x-auto">
         {items.length === 0 ? (
-          <div className="rounded-lg border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
-            No invoices found for the current filters.
+          <div className='cardInvoice2'>
+            <div className="bgInvoiceAlone rounded-lg border border-slate-200 bg-transparent px-4 py-6 text-sm text-slate-500">
+              No invoices found for the current filters.
+            </div>
           </div>
         ) : (
           <>

@@ -154,97 +154,106 @@ export function FundInvoice(){
   return (
     <div className="mx-auto mt-6 max-w-xl space-y-4">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">Fund invoice</h1>
-        <p className="text-xs text-slate-500">
+        <h1 className="text-lg font-semibold text-[#8437EB]">Fund invoice</h1>
+        <p className="text-xs text-slate-300">
           Send USDC into the invoice escrow. Settlement is performed by the backend relayer via the payment webhook
           once off-chain payment is confirmed; it is not executed directly by the connected wallet.
         </p>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Funding details</CardTitle>
-        </CardHeader>
-        <CardBody>
-          <form onSubmit={handleFund} className="grid gap-4 text-sm">
-            <FormGroup
-              label="Invoice ID"
-              htmlFor="invoice"
-              required
-              help="Invoice public key of the invoice you want to fund."
-            >
-              <Input id="invoice" name="invoice" placeholder="Invoice public key" required />
-            </FormGroup>
-            <FormGroup
-              label="Amount (USDC)"
-              htmlFor="amount"
-              required
-              help="Displayed in USDC, converted to 6-decimal base units on submit."
-            >
-              <Input id="amount" name="amount" placeholder="e.g. 5.0" required />
-            </FormGroup>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {mode === 'backend' ? (
-                <>
-                  <Button type="submit" loading={loading}>
-                    {loading ? 'Funding…' : 'Fund (backend signer)'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={handleSettle}
-                    disabled={loading || !result?.invoice}
-                  >
-                    Settle (webhook)
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={handleFundWithWallet}
-                    disabled={loading || !wallet.publicKey}
-                    loading={loading}
-                  >
-                    {wallet.publicKey ? 'Fund with wallet' : 'Connect wallet to fund'}
-                  </Button>
-                </>
-              )}
-            </div>
-            {result?.error && <div className="text-xs text-red-600">{result.error}</div>}
-            {(result?.fundTx || result?.settleTx || result?.status) && (
-              <div className="mt-2 grid gap-1 text-xs text-slate-800">
-                {result.fundTx && (
-                  <a
-                    href={`https://explorer.solana.com/tx/${result.fundTx}?cluster=devnet`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-brand hover:text-brand-dark"
-                  >
-                    Fund transaction
-                  </a>
-                )}
-                {result.settleTx && (
-                  <a
-                    href={`https://explorer.solana.com/tx/${result.settleTx}?cluster=devnet`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-brand hover:text-brand-dark"
-                  >
-                    Settle transaction
-                  </a>
-                )}
-                {result.status && (
-                  <div className="text-slate-800">
-                    <span className="text-slate-500">Status:</span>{' '}
-                    <span>{result.status}</span>
+      
+
+      <div className='cardFundInvoice'>
+        <div className='bgFundInvoice'>
+          <Card>
+            <CardHeader>
+              <CardTitle>Funding details</CardTitle>
+            </CardHeader>
+
+            <CardBody>
+              <form onSubmit={handleFund} className="grid gap-4 text-sm">
+                <FormGroup
+                  label="Invoice ID"
+                  htmlFor="invoice"
+                  required
+                  help="Invoice public key of the invoice you want to fund."
+                >
+                  <Input id="invoice" name="invoice" placeholder="Invoice public key" required />
+                </FormGroup>
+                <FormGroup
+                  label="Amount (USDC)"
+                  htmlFor="amount"
+                  required
+                  help="Displayed in USDC, converted to 6-decimal base units on submit."
+                >
+                  <Input id="amount" name="amount" placeholder="e.g. 5.0" required />
+                </FormGroup>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {mode === 'backend' ? (
+                    <>
+                      <Button type="submit" loading={loading}>
+                        {loading ? 'Funding…' : 'Fund (backend signer)'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handleSettle}
+                        disabled={loading || !result?.invoice}
+                      >
+                        Settle (webhook)
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        className='bg-gradient-to-r from-[#4D94CB] to-[#CD29EA]'
+                        type="button"
+                        variant="secondary"
+                        onClick={handleFundWithWallet}
+                        disabled={loading || !wallet.publicKey}
+                        loading={loading}
+                      >
+                        {wallet.publicKey ? 'Fund with wallet' : 'Connect wallet to fund'}
+                      </Button>
+                    </>
+                  )}
+                </div>
+                {result?.error && <div className="text-xs text-red-600">{result.error}</div>}
+                {(result?.fundTx || result?.settleTx || result?.status) && (
+                  <div className="mt-2 grid gap-1 text-xs text-slate-800">
+                    {result.fundTx && (
+                      <a
+                        href={`https://explorer.solana.com/tx/${result.fundTx}?cluster=devnet`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand hover:text-brand-dark"
+                      >
+                        Fund transaction
+                      </a>
+                    )}
+                    {result.settleTx && (
+                      <a
+                        href={`https://explorer.solana.com/tx/${result.settleTx}?cluster=devnet`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand hover:text-brand-dark"
+                      >
+                        Settle transaction
+                      </a>
+                    )}
+                    {result.status && (
+                      <div className="text-slate-800">
+                        <span className="text-slate-500">Status:</span>{' '}
+                        <span>{result.status}</span>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
-          </form>
-        </CardBody>
-      </Card>
+              </form>
+            </CardBody>
+          </Card>
+        </div>
+        <div className="blobFundInvoice"></div>
+      </div>
     </div>
   );
 }

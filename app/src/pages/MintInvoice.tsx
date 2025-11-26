@@ -145,139 +145,148 @@ export function MintInvoice(){
   return (
     <div className="mx-auto mt-6 max-w-xl space-y-4">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">Mint invoice</h1>
-        <p className="text-xs text-slate-500">Create a new invoice and escrow account on devnet.</p>
+        <h1 className="text-lg font-semibold text-[#8437EB]">Mint invoice</h1>
+        <p className="text-xs text-slate-300">Create a new invoice and escrow account on devnet.</p>
       </div>
-      <Card>
-        <CardHeader>
-          <div className="flex w-full items-center justify-between">
-            <CardTitle>Invoice details</CardTitle>
-            <div className="text-[11px] font-medium text-slate-500">Step {step} of 3</div>
-          </div>
-        </CardHeader>
-        <CardBody>
-          <form onSubmit={handleMint} className="grid gap-4 text-sm">
-            {(step >= 1) && (
-              <FormGroup
-                label="Metadata hash (CID)"
-                htmlFor="metadataHash"
-                required
-                help="ipfs://… or arbitrary hash identifying off-chain invoice data."
-              >
-                <Input id="metadataHash" name="metadataHash" placeholder="ipfs://… or arbitrary hash" required />
-              </FormGroup>
-            )}
+      
 
-            {(step >= 2) && (
-              <FormGroup
-                label="Amount (USDC)"
-                htmlFor="amount"
-                required
-                help="Displayed in USDC, converted to 6-decimal base units on submit."
-              >
-                <Input id="amount" name="amount" placeholder="e.g. 5.0" required />
-              </FormGroup>
-            )}
-
-            {step === 3 && (
-              <FormGroup
-                label="Due date (UNIX timestamp)"
-                htmlFor="dueDate"
-                required
-                help="Seconds since epoch; passed directly to the backend."
-              >
-                <Input id="dueDate" name="dueDate" placeholder="e.g. 1734043200" required />
-              </FormGroup>
-            )}
-
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setStep((s) => Math.max(1, s - 1))}
-                  disabled={step === 1 || loading}
-                >
-                  Back
-                </Button>
-                {!isLastStep && (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setStep((s) => Math.min(3, s + 1))}
-                    disabled={loading}
-                  >
-                    Next
-                  </Button>
-                )}
+      <div className=''>
+        <div className=''>
+          <Card>
+            <CardHeader>
+              <div className="flex w-full items-center justify-between">
+                <CardTitle>Invoice details</CardTitle>
+                <div className="text-[11px] font-medium text-slate-500">Step {step} of 3</div>
               </div>
-              <div className="flex gap-2">
-                {mode === 'backend' ? (
-                  <Button type="submit" loading={loading} disabled={!isLastStep || loading}>
-                    {loading ? 'Minting…' : 'Mint (backend signer)'}
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    onClick={handleMintWithWallet}
-                    disabled={loading || !wallet.publicKey || !isLastStep}
-                    loading={loading}
-                    variant="secondary"
-                  >
-                    {wallet.publicKey ? 'Mint with wallet' : 'Connect wallet to mint'}
-                  </Button>
-                )}
-              </div>
-            </div>
+            </CardHeader>
 
-            {result?.error && (
-              <div className="text-xs text-red-600">{result.error}</div>
-            )}
-            {result?.invoice && (
-              <div className="mt-2 grid gap-1 text-xs text-slate-800">
-                <div>
-                  <span className="text-slate-500">Invoice:</span>{' '}
-                  <span className="font-mono break-all">{result.invoice}</span>
+            <CardBody>
+              <form onSubmit={handleMint} className="grid gap-4 text-sm">
+                {(step >= 1) && (
+                  <FormGroup
+                    label="Metadata hash (CID)"
+                    htmlFor="metadataHash"
+                    required
+                    help="ipfs://… or arbitrary hash identifying off-chain invoice data."
+                  >
+                    <Input id="metadataHash" name="metadataHash" placeholder="ipfs://… or arbitrary hash" required />
+                  </FormGroup>
+                )}
+
+                {(step >= 2) && (
+                  <FormGroup
+                    label="Amount (USDC)"
+                    htmlFor="amount"
+                    required
+                    help="Displayed in USDC, converted to 6-decimal base units on submit."
+                  >
+                    <Input id="amount" name="amount" placeholder="e.g. 5.0" required />
+                  </FormGroup>
+                )}
+
+                {step === 3 && (
+                  <FormGroup
+                    label="Due date (UNIX timestamp)"
+                    htmlFor="dueDate"
+                    required
+                    help="Seconds since epoch; passed directly to the backend."
+                  >
+                    <Input id="dueDate" name="dueDate" placeholder="e.g. 1734043200" required />
+                  </FormGroup>
+                )}
+
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setStep((s) => Math.max(1, s - 1))}
+                      disabled={step === 1 || loading}
+                    >
+                      Back
+                    </Button>
+                    {!isLastStep && (
+                      <Button
+                        className=' text-black bg-[#347A9C]'
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setStep((s) => Math.min(3, s + 1))}
+                        disabled={loading}
+                      >
+                        Next
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    {mode === 'backend' ? (
+                      <Button type="submit" loading={loading} disabled={!isLastStep || loading}>
+                        {loading ? 'Minting…' : 'Mint (backend signer)'}
+                      </Button>
+                    ) : (
+                      <Button
+                        className='bg-gradient-to-r from-[#4D94CB] to-[#CD29EA]'
+                        type="button"
+                        onClick={handleMintWithWallet}
+                        disabled={loading || !wallet.publicKey || !isLastStep}
+                        loading={loading}
+                        variant="secondary"
+                      >
+                        {wallet.publicKey ? 'Mint with wallet' : 'Connect wallet to mint'}
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                {result.mintTx && (
-                  <a
-                    href={`https://explorer.solana.com/tx/${result.mintTx}?cluster=devnet`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-brand hover:text-brand-dark"
-                  >
-                    Mint transaction
-                  </a>
+
+                {result?.error && (
+                  <div className="text-xs text-red-600">{result.error}</div>
                 )}
-                {result.escrowTx && (
-                  <a
-                    href={`https://explorer.solana.com/tx/${result.escrowTx}?cluster=devnet`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-brand hover:text-brand-dark"
-                  >
-                    Create escrow transaction
-                  </a>
+                {result?.invoice && (
+                  <div className="mt-2 grid gap-1 text-xs text-slate-800">
+                    <div>
+                      <span className="text-slate-500">Invoice:</span>{' '}
+                      <span className="font-mono break-all">{result.invoice}</span>
+                    </div>
+                    {result.mintTx && (
+                      <a
+                        href={`https://explorer.solana.com/tx/${result.mintTx}?cluster=devnet`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand hover:text-brand-dark"
+                      >
+                        Mint transaction
+                      </a>
+                    )}
+                    {result.escrowTx && (
+                      <a
+                        href={`https://explorer.solana.com/tx/${result.escrowTx}?cluster=devnet`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand hover:text-brand-dark"
+                      >
+                        Create escrow transaction
+                      </a>
+                    )}
+                    <div className="mt-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          if (result?.invoice) navigate(`/invoice/${result.invoice}`)
+                        }}
+                      >
+                        View invoice details
+                      </Button>
+                    </div>
+                  </div>
                 )}
-                <div className="mt-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      if (result?.invoice) navigate(`/invoice/${result.invoice}`)
-                    }}
-                  >
-                    View invoice details
-                  </Button>
-                </div>
-              </div>
-            )}
-          </form>
-        </CardBody>
-      </Card>
+              </form>
+            </CardBody>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }
