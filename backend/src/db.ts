@@ -455,9 +455,10 @@ export function upsertListingFromChain(input: { invoicePk: string; seller: strin
     .get(invoicePk, seller, price) as any
 
   if (existing) {
-    const currentQtyStr = existing.qty != null ? String(existing.qty) : remainingStr
+    // For consistency across deployments, treat on-chain remaining_qty as canonical
+    // for both qty and remaining_qty once a listing has an on-chain account.
     db.prepare('UPDATE listings SET qty = ?, remaining_qty = ?, status = ?, updated_at = ? WHERE id = ?')
-      .run(currentQtyStr, remainingStr, status, ts, existing.id)
+      .run(remainingStr, remainingStr, status, ts, existing.id)
     const row = db.prepare('SELECT * FROM listings WHERE id = ?').get(existing.id)
     return mapListingRow(row) as Listing
   } else {
