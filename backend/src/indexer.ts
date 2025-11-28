@@ -1,5 +1,5 @@
 import { getProgram } from './anchor'
-import { upsertInvoiceFromChain, setPositionsCache, getPositionsCache, recordPositionsDiffs } from './db'
+import { upsertInvoiceFromChain, setPositionsCache, getPositionsCache, recordPositionsDiffs, upsertListingFromChain } from './db'
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token'
 
 export async function runIndexer() {
@@ -74,8 +74,13 @@ export async function runIndexer() {
 
   async function syncAll(){
     try{
-      const all = await (program.account as any)['invoice'].all()
-      for (const it of all){
+      const invoices = await (program.account as any)['invoice'].all()
+      let listings: Array<{ publicKey: any; account: any }> = []
+      try {
+        listings = await (program.account as any)['listing'].all()
+      } catch {}
+
+      for (const it of invoices){
         try { await upsertInvoiceFromChain(program, it.publicKey) } catch {}
         // Precompute positions for invoices with shares_mint
         try {
@@ -130,6 +135,21 @@ export async function runIndexer() {
           }
         } catch {}
       }
+
+      // Index on-chain listing accounts into SQLite listings table
+      try {
+        for (const lt of listings) {
+          try {
+            const acct: any = lt.account
+            const invoicePk: string = acct?.invoice?.toBase58 ? acct.invoice.toBase58() : String(acct?.invoice || '')
+            const sellerStr: string = acct?.seller?.toBase58 ? acct.seller.toBase58() : String(acct?.seller || '')
+            if (!invoicePk || !sellerStr) continue
+            const priceStr: string = acct?.price?.toString?.() ?? String(acct?.price ?? '0')
+            const remainingStr: string = acct?.remainingQty?.toString?.() ?? String(acct?.remainingQty ?? '0')
+            upsertListingFromChain({ invoicePk, seller: sellerStr, price: priceStr, remainingQty: remainingStr })
+          } catch {}
+        }
+      } catch {}
     }catch{}
   }
   await syncAll()
