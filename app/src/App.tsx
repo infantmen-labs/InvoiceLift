@@ -21,13 +21,14 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
   }
   render() {
     if (this.state.hasError) {
+      const message = this.state.error && (this.state.error.stack || String(this.state.error));
       return (
         <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
           <div className="max-w-lg rounded-xl border border-red-500/40 bg-red-950/40 p-6 shadow-lg">
             <h1 className="text-lg font-semibold text-red-200 mb-2">Unexpected error</h1>
             <p className="mb-2 text-sm text-red-100">The UI crashed. Refresh the page or check the console for details.</p>
             <pre className="mt-2 max-h-64 overflow-auto rounded bg-black/60 p-3 text-xs text-red-200">
-              {String(this.state.error)}
+              {message}
             </pre>
           </div>
         </div>

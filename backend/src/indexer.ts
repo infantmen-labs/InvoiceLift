@@ -133,5 +133,10 @@ export async function runIndexer() {
     }catch{}
   }
   await syncAll()
-  setInterval(syncAll, 30000)
+  const rawInterval = process.env.INDEXER_SYNC_MS ?? '30000'
+  let intervalMs = Number(rawInterval)
+  if (!Number.isFinite(intervalMs)) intervalMs = 30000
+  if (intervalMs > 0) {
+    setInterval(syncAll, intervalMs)
+  }
 }
