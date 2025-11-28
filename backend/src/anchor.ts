@@ -10,6 +10,11 @@ function loadKeypair(path: string): web3.Keypair {
   return web3.Keypair.fromSecretKey(Uint8Array.from(secret))
 }
 
+function loadKeypairFromJson(json: string): web3.Keypair {
+  const secret = JSON.parse(json) as number[]
+  return web3.Keypair.fromSecretKey(Uint8Array.from(secret))
+}
+
 export async function buildCancelListingV2Tx(
   program: Program,
   invoicePk: web3.PublicKey,
@@ -92,9 +97,19 @@ export function getConnection(): web3.Connection {
 }
 
 export function getProvider(): AnchorProvider {
-  const kpPath = process.env.RELAYER_KEYPAIR_PATH
-  if (!kpPath) throw new Error('RELAYER_KEYPAIR_PATH not set')
-  const keypair = loadKeypair(kpPath)
+  const kpJson = process.env.RELAYER_KEYPAIR_JSON
+  let keypair: web3.Keypair
+  if (kpJson && kpJson.trim().length > 0) {
+    try {
+      keypair = loadKeypairFromJson(kpJson)
+    } catch (e: any) {
+      throw new Error(`Failed to parse RELAYER_KEYPAIR_JSON: ${e?.message || e}`)
+    }
+  } else {
+    const kpPath = process.env.RELAYER_KEYPAIR_PATH
+    if (!kpPath) throw new Error('RELAYER_KEYPAIR_PATH or RELAYER_KEYPAIR_JSON must be set')
+    keypair = loadKeypair(kpPath)
+  }
   const wallet = new Wallet(keypair)
   return new AnchorProvider(getConnection(), wallet, { commitment: DEFAULT_COMMITMENT })
 }
@@ -103,13 +118,27 @@ export function getProgram(): Program {
   const programIdStr = process.env.PROGRAM_ID
   if (!programIdStr) throw new Error('PROGRAM_ID not set')
   const programId = new web3.PublicKey(programIdStr)
-  const idlPath = resolve(process.cwd(), '..', 'target', 'idl', 'invoice_manager.json')
+  const envIdl = process.env.INVOICE_MANAGER_IDL_JSON
+  const repoIdlPath = resolve(process.cwd(), 'idl', 'invoice_manager.json')
+  const targetIdlPath = resolve(process.cwd(), '..', 'target', 'idl', 'invoice_manager.json')
   try {
-    const idl = JSON.parse(readFileSync(idlPath, 'utf8')) as Idl
+    let idl: Idl
+    if (envIdl && envIdl.trim().length > 0) {
+      idl = JSON.parse(envIdl) as Idl
+    } else {
+      try {
+        idl = JSON.parse(readFileSync(repoIdlPath, 'utf8')) as Idl
+      } catch {
+        idl = JSON.parse(readFileSync(targetIdlPath, 'utf8')) as Idl
+      }
+    }
     const provider = getProvider()
     return new (Program as any)(idl, provider) as Program
   } catch (e: any) {
-    throw new Error(`Failed to load program: ${e.message}. IDL path: ${idlPath}`)
+    const source = envIdl && envIdl.trim().length > 0
+      ? 'INVOICE_MANAGER_IDL_JSON env var'
+      : `file at ${repoIdlPath} or ${targetIdlPath}`
+    throw new Error(`Failed to load program from ${source}: ${e?.message || e}`)
   }
 }
 

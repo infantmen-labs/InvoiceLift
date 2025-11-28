@@ -11,24 +11,7 @@ type Holding = { invoice: string; sharesMint: string; amount: string }
 
 export function Portfolio(){
   const wallet = useWallet()
-  const { show } = useToast()
-  const [items, setItems] = useState<Holding[]>([])
-  const [loading, setLoading] = useState(false)
   const walletStr = useMemo(() => wallet.publicKey?.toBase58() || '', [wallet.publicKey])
-
-  async function load(){
-    if (!walletStr) return
-    setLoading(true)
-    try{
-      const r = await fetch(`${backend}/api/portfolio/${walletStr}`)
-      const j = await r.json()
-      if (!j.ok) throw new Error(j.error || 'load failed')
-      setItems(j.portfolio || [])
-    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
-    finally { setLoading(false) }
-  }
-
-  useEffect(() => { load() }, [walletStr])
 
   if (!walletStr) return (
     <div className="mt-6">
@@ -45,6 +28,14 @@ export function Portfolio(){
     </div>
   )
 
+  return <PortfolioConnected walletStr={walletStr} />
+}
+
+function PortfolioConnected({ walletStr }: { walletStr: string }){
+  const { show } = useToast()
+  const [items, setItems] = useState<Holding[]>([])
+  const [loading, setLoading] = useState(false)
+
   function fmt(a: string){
     try { const n = Number(a) / 1_000_000; return n.toLocaleString(undefined, { maximumFractionDigits: 6 }) } catch { return a }
   }
@@ -58,6 +49,21 @@ export function Portfolio(){
     }
     return { count: items.length, totalShares }
   }, [items])
+
+  async function load(){
+    setLoading(true)
+    try{
+      const r = await fetch(`${backend}/api/portfolio/${walletStr}`)
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'load failed')
+      setItems(j.portfolio || [])
+    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    load()
+  }, [walletStr])
 
   return (
     <div className="mt-6 space-y-4">

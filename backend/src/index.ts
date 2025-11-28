@@ -723,33 +723,17 @@ app.get('/api/invoice/:id/positions/history', async (req: Request, res: Response
 app.get('/api/portfolio/:wallet', async (req: Request, res: Response) => {
   try {
     const wallet = String(req.params.wallet);
-    const program = getProgram();
     const invoices = listInvoicesWithSharesMint();
     const out: Array<{ invoice: string; sharesMint: string; amount: string }> = [];
-    const DEFAULT_PK = '11111111111111111111111111111111';
     for (const inv of invoices) {
       try {
-        // Use cache first
         const cached = getPositionsCache(inv.invoicePk);
-        let amount: string | null = null;
-        if (cached && Array.isArray(cached.positions)) {
-          const hit = cached.positions.find((p: any) => p.wallet === wallet);
-          if (hit && BigInt(String(hit.amount)) > 0n) amount = String(hit.amount);
-        }
-        if (amount === null) {
-          // Fallback to on-chain for this invoice only
-          const conn = (program.provider as any).connection as web3.Connection;
-          const resp = await conn.getParsedProgramAccounts(TOKEN_PROGRAM_ID, {
-            filters: [ { dataSize: 165 }, { memcmp: { offset: 0, bytes: inv.sharesMint } } ],
-          });
-          for (const it of resp) {
-            const info: any = (it.account as any).data?.parsed?.info;
-            const owner: string = info?.owner || '';
-            const amtStr: string = info?.tokenAmount?.amount ?? '0';
-            if (owner === wallet && BigInt(amtStr) > 0n) { amount = String(amtStr); break; }
-          }
-        }
-        if (amount) out.push({ invoice: inv.invoicePk, sharesMint: inv.sharesMint, amount });
+        if (!cached || !Array.isArray(cached.positions)) continue;
+        const hit = (cached.positions as Array<any>).find((p: any) => p.wallet === wallet);
+        if (!hit) continue;
+        const amtStr = String((hit as any).amount ?? '0');
+        if (BigInt(amtStr) <= 0n) continue;
+        out.push({ invoice: inv.invoicePk, sharesMint: inv.sharesMint, amount: amtStr });
       } catch {}
     }
     res.status(200).json({ ok: true, portfolio: out });

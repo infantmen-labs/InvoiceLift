@@ -437,6 +437,39 @@ export function listOpenListings(limit: number = 200): Listing[] {
   return (rows || []).map(mapListingRow).filter(Boolean) as Listing[]
 }
 
+export function upsertListingFromChain(input: { invoicePk: string; seller: string; price: string; remainingQty: string }): Listing {
+  const db = getDb()
+  const invoicePk = String(input.invoicePk || '')
+  const seller = String(input.seller || '')
+  const price = String(input.price || '0')
+  const remainingStr = String(input.remainingQty || '0')
+  if (!invoicePk || !seller) {
+    throw new Error('invoicePk and seller are required for upsertListingFromChain')
+  }
+  let remaining: bigint
+  try { remaining = BigInt(remainingStr) } catch { remaining = 0n }
+  const status: 'Open' | 'Filled' = remaining > 0n ? 'Open' : 'Filled'
+  const ts = nowMs()
+
+  const existing = db.prepare('SELECT * FROM listings WHERE invoice_pk = ? AND seller = ? AND price = ? ORDER BY id ASC LIMIT 1')
+    .get(invoicePk, seller, price) as any
+
+  if (existing) {
+    // For consistency across deployments, treat on-chain remaining_qty as canonical
+    // for both qty and remaining_qty once a listing has an on-chain account.
+    db.prepare('UPDATE listings SET qty = ?, remaining_qty = ?, status = ?, updated_at = ? WHERE id = ?')
+      .run(remainingStr, remainingStr, status, ts, existing.id)
+    const row = db.prepare('SELECT * FROM listings WHERE id = ?').get(existing.id)
+    return mapListingRow(row) as Listing
+  } else {
+    const info = db.prepare('INSERT INTO listings (invoice_pk, seller, price, qty, remaining_qty, status, signature, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run(invoicePk, seller, price, remainingStr, remainingStr, status, null, ts, ts)
+    const id = Number(info.lastInsertRowid)
+    const row = db.prepare('SELECT * FROM listings WHERE id = ?').get(id)
+    return mapListingRow(row) as Listing
+  }
+}
+
 // --- Phase 3: Verification & Trust helpers ---
 export type KycRecord = {
   wallet: string
