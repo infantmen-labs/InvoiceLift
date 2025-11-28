@@ -119,7 +119,7 @@ export function getProgram(): Program {
   if (!programIdStr) throw new Error('PROGRAM_ID not set')
   const programId = new web3.PublicKey(programIdStr)
   const envIdl = process.env.INVOICE_MANAGER_IDL_JSON
-  const repoIdlPath = resolve(__dirname, '..', 'idl', 'invoice_manager.json')
+  const repoIdlPath = resolve(process.cwd(), 'idl', 'invoice_manager.json')
   const targetIdlPath = resolve(process.cwd(), '..', 'target', 'idl', 'invoice_manager.json')
   try {
     let idl: Idl
