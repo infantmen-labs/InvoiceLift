@@ -28,7 +28,10 @@ export function Portfolio(){
     finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [walletStr])
+  useEffect(() => {
+    if (!walletStr) return
+    load()
+  }, [walletStr])
 
   if (!walletStr) return (
     <div className="mt-6">
