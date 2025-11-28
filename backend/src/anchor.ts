@@ -119,17 +119,25 @@ export function getProgram(): Program {
   if (!programIdStr) throw new Error('PROGRAM_ID not set')
   const programId = new web3.PublicKey(programIdStr)
   const envIdl = process.env.INVOICE_MANAGER_IDL_JSON
-  const idlPath = resolve(process.cwd(), '..', 'target', 'idl', 'invoice_manager.json')
+  const repoIdlPath = resolve(__dirname, '..', 'idl', 'invoice_manager.json')
+  const targetIdlPath = resolve(process.cwd(), '..', 'target', 'idl', 'invoice_manager.json')
   try {
-    const idl: Idl = envIdl && envIdl.trim().length > 0
-      ? JSON.parse(envIdl) as Idl
-      : JSON.parse(readFileSync(idlPath, 'utf8')) as Idl
+    let idl: Idl
+    if (envIdl && envIdl.trim().length > 0) {
+      idl = JSON.parse(envIdl) as Idl
+    } else {
+      try {
+        idl = JSON.parse(readFileSync(repoIdlPath, 'utf8')) as Idl
+      } catch {
+        idl = JSON.parse(readFileSync(targetIdlPath, 'utf8')) as Idl
+      }
+    }
     const provider = getProvider()
     return new (Program as any)(idl, provider) as Program
   } catch (e: any) {
     const source = envIdl && envIdl.trim().length > 0
       ? 'INVOICE_MANAGER_IDL_JSON env var'
-      : `file at ${idlPath}`
+      : `file at ${repoIdlPath} or ${targetIdlPath}`
     throw new Error(`Failed to load program from ${source}: ${e?.message || e}`)
   }
 }
