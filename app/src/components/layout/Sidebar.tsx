@@ -31,7 +31,7 @@ export function Sidebar({ toggle }: toggleMenu){
 
   return (
   <>
-    {toggle && <aside className="lg:hidden mt-[72px] flex  w-56 flex-col border-r border-slate-200 bg-slate-900 text-slate-100">
+    <aside className={`${toggle ? 'block' : 'hidden'} lg:hidden mt-[72px] flex  w-56 flex-col border-r border-slate-200 bg-slate-900 text-slate-100`}>
       <div className="flex justify-between h-14 items-center border-b border-slate-800 px-4">
         <div className="text-sm font-cursive font-bold uppercase tracking-wide animate-bounce">InvoiceLift</div>
       </div>
@@ -81,7 +81,7 @@ export function Sidebar({ toggle }: toggleMenu){
           </div>
         )}
       </div>
-    </aside>}
+    </aside>
 
 
     <aside className="lg:flex hidden h-full w-56 flex-col border-r border-slate-200 bg-slate-900 text-slate-100">

@@ -141,13 +141,13 @@ export function Landing(){
         <section className="border-b border-slate-800 bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900">
           <div className="mx-auto flex max-w-5xl flex-col gap-10 px-4 py-12 sm:px-6 sm:py-16 md:flex-row md:items-center">
             <motion.div
-            // variants={rightEntry}
-            // initial="hidden"
-            // whileInView="visible"
-            // exit="exit"
-            // viewport={{
-            //   once: false
-            // }}
+            variants={rightEntry}
+            initial="hidden"
+            whileInView="visible"
+            exit="exit"
+            viewport={{
+              once: false
+            }}
             className="flex-1 space-y-5">
               <p className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-emerald-200">
                 Devnet PoC · Invoice Financing on Solana
@@ -186,13 +186,13 @@ export function Landing(){
               perspective={1000}
               >
               <motion.div
-                // variants={leftEntry}
-                // initial="hidden"
-                // whileInView="visible"
-                // exit="exit"
-                // viewport={{
-                //   once: false
-                // }}
+                variants={leftEntry}
+                initial="hidden"
+                whileInView="visible"
+                exit="exit"
+                viewport={{
+                  once: false
+                }}
               className="mt-6 flex-1 md:mt-0 shadow-[0_0_25px_rgba(132,55,235,1.5)] rounded-xl">
                 <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-xl">
                   <div className="text-xs font-medium uppercase tracking-wide text-slate-400">What you can do</div>
@@ -225,13 +225,13 @@ export function Landing(){
         <section className="border-b border-slate-800 bg-slate-950">
           <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
             <motion.div
-              // variants={UpToDown}
-              // initial="hidden"
-              // whileInView="visible"
-              // exit="exit"
-              // viewport={{
-              //   once: false
-              // }}
+              variants={UpToDown}
+              initial="hidden"
+              whileInView="visible"
+              exit="exit"
+              viewport={{
+                once: false
+              }}
             >
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Core flows</h2>
               <p className="mt-1 text-sm text-slate-300">

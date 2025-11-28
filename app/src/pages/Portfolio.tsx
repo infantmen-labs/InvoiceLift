@@ -63,8 +63,8 @@ export function Portfolio(){
     <div className="mt-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="m-0 text-lg font-semibold text-slate-900">Portfolio</h2>
-          <p className="text-xs text-slate-500">
+          <h2 className="m-0 text-lg font-semibold text-[#8437EB]">Portfolio</h2>
+          <p className="text-xs text-slate-300">
             Invoice share positions held by the connected wallet on devnet.
           </p>
         </div>
