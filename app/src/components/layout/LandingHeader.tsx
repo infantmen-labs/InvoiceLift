@@ -11,7 +11,7 @@ const UpToDown = {
   visible: { 
     opacity: 1, 
     y: 0,
-    transition: { type: 'spring', delay: 1 }
+    transition: { type: 'spring', delay: 0.2 }
   },
   exit: {
     y: "-50px",
@@ -44,7 +44,7 @@ export function LandingHeader(){
             to="/invoices"
             className="animate-bounce inline-flex items-center rounded-lg border border-brand/60 bg-brand px-3 py-1.5 font-medium text-white shadow-sm hover:bg-brand-dark"
           >
-            Launch App
+            Launch Demo
           </Link>
         </div>
       </div>

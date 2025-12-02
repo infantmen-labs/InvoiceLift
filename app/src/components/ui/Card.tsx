@@ -2,7 +2,7 @@ import React from 'react'
 
 export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }){
   return (
-    <div className={['rounded-lg border border-slate-200 bg-slate-100 shadow-sm', className].join(' ')}>
+    <div className={['rounded-lg border shadow-sm', className].join(' ')}>
       {children}
     </div>
   )
@@ -10,14 +10,14 @@ export function Card({ children, className = '' }: { children: React.ReactNode; 
 
 export function CardHeader({ children, className = '' }: { children: React.ReactNode; className?: string }){
   return (
-    <div className={['flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3', className].join(' ')}>
+    <div className={['flex items-center justify-between gap-2 border-b border-slate-400 px-4 py-3', className].join(' ')}>
       {children}
     </div>
   )
 }
 
 export function CardTitle({ children }: { children: React.ReactNode }){
-  return <h2 className="text-sm font-semibold text-slate-900">{children}</h2>
+  return <h2 className="text-md font-cursive font-bold text-slate-900">{children}</h2>
 }
 
 export function CardBody({ children, className = '' }: { children: React.ReactNode; className?: string }){

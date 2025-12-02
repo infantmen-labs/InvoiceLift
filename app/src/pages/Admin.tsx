@@ -47,7 +47,7 @@ export function Admin(){
   }
 
   return (
-    <div className="mt-[-10px] space-y-4">
+    <div className="mt-[-10px] space-y-4 px-6">
       <div>
         <h2 className="text-lg font-semibold text-[#8437EB]">Admin</h2>
         <p className="text-xs text-slate-300">Devnet-only tools for editing KYC, documents, and credit scores.</p>

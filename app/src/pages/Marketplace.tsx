@@ -327,8 +327,19 @@ export function Marketplace(){
 
   useEffect(() => { setPage(1) }, [invoiceFilter, mineOnly])
 
+
+  // Displaying the remaining details when an invoice is clicked 
+  const [openItems, setOpenItems] = useState<Record<number, boolean>>({});
+
+  const toggle = (index: number): void => {
+    setOpenItems((prev) => ({
+      ...prev,
+      [index]: !prev[index],
+    }));
+  };
+
   return (
-    <div className="mt-4 space-y-3">
+    <div className="mt-4 space-y-3 px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="m-0 text-lg font-semibold text-[#8437EB]">Marketplace</h2>
@@ -373,7 +384,7 @@ export function Marketplace(){
         </div>
       ) : (
         <div className="mt-3 grid gap-2">
-          <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,2fr)] text-[11px] font-medium uppercase tracking-wide text-slate-500 sm:grid">
+          <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,2fr)] text-[11px] font-medium uppercase tracking-wide text-slate-400 sm:grid mt-6">
             <div>Invoice</div>
             <div>Seller</div>
             <div>Price</div>
@@ -397,8 +408,9 @@ export function Marketplace(){
                 : 'border-slate-200 bg-slate-100 text-slate-700'
             return (
               <div
+                onClick={() => toggle(l.id)}
                 key={l.id}
-                className="grid grid-cols-1 items-start gap-3 rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-xs shadow-sm transition hover:border-brand/40 hover:shadow-md sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,2fr)]"
+                className="grid grid-cols-1 items-start gap-3 rounded-xl cursor-pointer border border-slate-200 bg-white/90 px-4 py-3 text-xs shadow-sm transition hover:border-brand/40 hover:shadow-md sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,2fr)]"
               >
                 <div className="font-mono text-slate-800" title={l.invoicePk}>{short(l.invoicePk)}</div>
                 <div className="font-mono text-slate-700" title={l.seller}>
@@ -498,7 +510,9 @@ export function Marketplace(){
                   )}
 
                   {canFill ? (
-                    <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2">
+                    <div
+                    onClick={(e) => e.stopPropagation()}
+                    className={`${openItems[l.id] ? 'block' : 'hidden'} z-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2`}>
                       <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
                         <span>Buyer actions</span>
                         <span className="text-slate-400">You pay in USDC</span>
@@ -513,7 +527,7 @@ export function Marketplace(){
                             value={fillQtyById[l.id] || ''}
                             onChange={(e) => setFillQtyById((m) => ({ ...m, [l.id]: e.target.value }))}
                             placeholder="Qty (shares)"
-                            className="h-8 text-[11px]"
+                            className="h-8 text-[11px] px-[5px]"
                           />
                         </div>
                         {allowanceEnabled ? (

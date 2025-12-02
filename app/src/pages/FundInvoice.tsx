@@ -152,7 +152,7 @@ export function FundInvoice(){
     }
   }
   return (
-    <div className="mx-auto mt-6 max-w-xl space-y-4">
+    <div className="mx-auto mt-6 max-w-xl space-y-4 px-6">
       <div>
         <h1 className="text-lg font-semibold text-[#8437EB]">Fund invoice</h1>
         <p className="text-xs text-slate-300">

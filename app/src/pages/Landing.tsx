@@ -164,7 +164,7 @@ export function Landing(){
                   to="/invoices"
                   className="animate-jump inline-flex items-center rounded-lg border border-brand/60 bg-brand px-4 py-2 font-medium text-white shadow-sm hover:bg-brand-dark"
                 >
-                  Launch App
+                  Launch Demo
                 </Link>
                 <a
                   href="https://github.com/Sektorial12/InvoiceLift"

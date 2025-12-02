@@ -143,14 +143,14 @@ export function MintInvoice(){
   const isLastStep = step === 3;
 
   return (
-    <div className="mx-auto mt-6 max-w-xl space-y-4">
+    <div className="mx-auto mt-6 max-w-xl space-y-4 px-6">
       <div>
         <h1 className="text-lg font-semibold text-[#8437EB]">Mint invoice</h1>
         <p className="text-xs text-slate-300">Create a new invoice and escrow account on devnet.</p>
       </div>
       
 
-      <div className=''>
+      <div className=' border-slate-200 bg-slate-100 rounded-md'>
         <div className=''>
           <Card>
             <CardHeader>
@@ -208,7 +208,7 @@ export function MintInvoice(){
                     </Button>
                     {!isLastStep && (
                       <Button
-                        className=' text-black bg-[#347A9C]'
+                        className=' text-black'
                         type="button"
                         variant="secondary"
                         size="sm"

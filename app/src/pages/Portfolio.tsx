@@ -66,7 +66,7 @@ function PortfolioConnected({ walletStr }: { walletStr: string }){
   }, [walletStr])
 
   return (
-    <div className="mt-6 space-y-4">
+    <div className="mt-6 space-y-4 px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="m-0 text-lg font-semibold text-[#8437EB]">Portfolio</h2>

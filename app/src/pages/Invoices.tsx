@@ -12,6 +12,27 @@ import { Badge } from '../components/ui/Badge'
 import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card'
 import { StatCard } from '../components/ui/StatCard'
 import { Table, TableBody, TableCell, TableHeader, TableHeadCell, TableRow } from '../components/ui/Table'
+import { motion } from 'framer-motion'
+
+
+
+const UpToDown = {
+  hidden: { 
+    opacity: 0, 
+    y: '-100vh' 
+  },
+  visible: { 
+    opacity: 1, 
+    y: 0,
+    transition: { type: 'spring', delay: 0.2 }
+  },
+  exit: {
+    y: "100vh",
+    transition: { ease: 'easeInOut' }
+  }
+};
+
+
 
 const backend = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:8080'
 const PAGE_SIZE = 10
@@ -670,18 +691,26 @@ export function Invoices() {
         }
       }, [windowWidth])
 
+
+      // Open & Close Summary
+      const [showSummary, setShowSummary] = useState<boolean>(false)
+
+      function openSummary(): void {
+        setShowSummary(prev => !prev)
+      }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 mx-[10px]">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
 
         <div className='cardInvoice1'>
           <Card className="bgInvoice1 flex-1 bg-white">
-          <CardHeader className="border-b bg-[#ebebeb] px-4 py-3">
+          <CardHeader className="border-b bg-white px-4 py-3">
             <CardTitle>Filters</CardTitle>
           </CardHeader>
           <CardBody className="flex flex-wrap items-center gap-3 ">
             <div className="w-32">
-              <Select className='bg-[#CCCBCB]' value={status} onChange={(e) => setStatus(e.target.value)}>
+              <Select className='bg-white' value={status} onChange={(e) => setStatus(e.target.value)}>
                 <option value="">All</option>
                 <option value="Open">Open</option>
                 <option value="Funded">Funded</option>
@@ -726,7 +755,7 @@ export function Invoices() {
           </div>
 
           <div className='cardInvoice2'>
-            <div className='bgInvoice2'>
+            <div className='bgInvoice2 whitespace-nowrap'>
               <StatCard
                 label="Total amount"
                 value={`${stats.totalAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC`}
@@ -747,789 +776,811 @@ export function Invoices() {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        {items.length === 0 ? (
-          <div className='cardInvoice2'>
-            <div className="bgInvoiceAlone rounded-lg border border-slate-200 bg-transparent px-4 py-6 text-sm text-slate-500">
-              No invoices found for the current filters.
-            </div>
-          </div>
-        ) : (
-          <>
-            <Table>
-              <TableHeader>
-                <tr>
-                  <TableHeadCell className="w-[40px]">#</TableHeadCell>
-                  <TableHeadCell>Invoice</TableHeadCell>
-                  <TableHeadCell>Status</TableHeadCell>
-                  <TableHeadCell>Seller</TableHeadCell>
-                  <TableHeadCell>Funded / Amount</TableHeadCell>
-                  <TableHeadCell>Links</TableHeadCell>
-                </tr>
-              </TableHeader>
-              <TableBody>
-                {pagedItems.map((it, idx) => {
-                  const amount = Number(it.amount || '0') / 1_000_000
-                  const funded = Number(it.fundedAmount || '0') / 1_000_000
-                  const fundedPct = amount > 0 ? (funded / amount) * 100 : 0
-                  const rowNumber = startIndex + idx + 1
-                  return (
-                    <TableRow
-                      key={it.invoicePk}
-                      className="cursor-pointer"
-                      onClick={() => setSelected(it.invoicePk)}
-                    >
-                      <TableCell className="text-xs text-slate-500">
-                        {rowNumber}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-slate-800">
-                        {shortAddress(it.invoicePk)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={it.status === 'Open' ? 'warning' : it.status === 'Funded' ? 'success' : 'default'}
-                        >
-                          {it.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-slate-700">
-                        {shortAddress(it.seller)}
-                      </TableCell>
-                      <TableCell className="text-xs text-slate-800">
-                        <span className="font-medium">{funded.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                        <span className="text-slate-500"> / {amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC</span>
-                        {amount > 0 && (
-                          <span className="ml-1 text-slate-500">
-                            · {fundedPct.toLocaleString(undefined, { maximumFractionDigits: 1 })}%
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <a
-                            href={`https://solscan.io/address/${it.invoicePk}?cluster=devnet`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-brand hover:text-brand-dark"
-                          >
-                            Invoice
-                          </a>
-                          <a
-                            href={`https://solscan.io/address/${it.escrowToken}?cluster=devnet`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-brand hover:text-brand-dark"
-                          >
-                            Escrow
-                          </a>
-                          {it.lastSig ? (
-                            <a
-                              href={`https://solscan.io/tx/${it.lastSig}?cluster=devnet`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-brand hover:text-brand-dark"
-                            >
-                              Last tx
-                            </a>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-
-            {pageCount > 1 && (
-              <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
-                <div>
-                  Showing {startIndex + 1}–{Math.min(startIndex + pagedItems.length, items.length)} of {items.length}
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={currentPage === 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    Prev
-                  </Button>
-                  {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-                    <Button
-                      key={p}
-                      variant={p === currentPage ? 'secondary' : 'ghost'}
-                      size="sm"
-                      onClick={() => setPage(p)}
-                    >
-                      {p}
-                    </Button>
-                  ))}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={currentPage === pageCount}
-                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                  >
-                    Next
-                  </Button>
+      <div className='max-w-full h-auto flex justify-center items-center'>
+        <div className='Table overflow-auto sm:overflow-x-auto w-[360px] h-auto py-5'>
+          <div className="overflow-x-auto">
+            {items.length === 0 ? (
+              <div className='cardInvoice2'>
+                <div className="bgInvoiceAlone rounded-lg border border-slate-200 bg-transparent px-4 py-6 text-sm text-slate-500">
+                  No invoices found for the current filters.
                 </div>
               </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {selected ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 pl-56 pr-4">
-          <div
-            className="absolute inset-0"
-            onClick={handleCloseDetail}
-          />
-          <div className="relative z-10 w-full max-w-3xl px-4">
-            <Card className="max-h-[80vh] overflow-hidden bg-white shadow-xl">
-              <CardHeader className="border-b border-slate-200">
-                <div className="flex w-full items-center justify-between gap-2">
-                  <CardTitle>Invoice detail</CardTitle>
-                  <div className="flex items-center gap-2 text-xs">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => loadDetail(selected)}
-                      disabled={detailLoading}
-                    >
-                      {detailLoading ? 'Loading…' : 'Refresh'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleCloseDetail}
-                    >
-                      Close
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardBody className="max-h-[70vh] overflow-y-auto">
-                {detailError ? (
-                  <div className="mb-2 text-xs text-red-600">{detailError}</div>
-                ) : null}
-                {!detail || detailLoading ? (
-                  <div className="text-sm text-slate-500">
-                    {detailLoading ? 'Loading…' : 'No data'}
-                  </div>
-                ) : (
-                  <div className="space-y-6 text-sm">
-                    {/* Summary */}
-                    <div>
-                      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Summary
-                      </h3>
-                      <div className="grid grid-cols-[140px_minmax(0,1fr)] gap-y-2">
-                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                          Invoice
-                        </div>
-                        <div
-                          className="break-all font-mono text-xs text-slate-800"
-                          title={selected || undefined}
+            ) : (
+              <>
+                <Table>
+                  <TableHeader>
+                    <tr>
+                      <TableHeadCell className="w-[40px] text-green-500">#</TableHeadCell>
+                      <TableHeadCell className='text-white/90'>Invoice</TableHeadCell>
+                      <TableHeadCell className='text-white/90'>Status</TableHeadCell>
+                      <TableHeadCell className='text-white/90'>Seller</TableHeadCell>
+                      <TableHeadCell className='text-white/90'>Funded / Amount</TableHeadCell>
+                      <TableHeadCell className='text-white/90'>Links</TableHeadCell>
+                    </tr>
+                  </TableHeader>
+                  <TableBody>
+                    {pagedItems.map((it, idx) => {
+                      const amount = Number(it.amount || '0') / 1_000_000
+                      const funded = Number(it.fundedAmount || '0') / 1_000_000
+                      const fundedPct = amount > 0 ? (funded / amount) * 100 : 0
+                      const rowNumber = startIndex + idx + 1
+                      return (
+                        <TableRow
+                          key={it.invoicePk}
+                          className="cursor-pointer"
+                          onClick={() => setSelected(it.invoicePk)}
                         >
-                          {shortAddress(selected)}
-                        </div>
-                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                          Status
-                        </div>
-                        <div className="text-xs text-slate-900">
-                          {(() => {
-                            const raw = (detailDb?.status || (detail.status ? Object.keys(detail.status)[0] : 'unknown')) as string
-                            const normalized = String(raw || '').toLowerCase()
-                            let cls = 'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium '
-                            if (normalized === 'open') cls += 'bg-emerald-50 text-emerald-700'
-                            else if (normalized === 'funded') cls += 'bg-blue-50 text-blue-700'
-                            else if (normalized === 'repaid' || normalized === 'settled') cls += 'bg-slate-900 text-slate-50'
-                            else if (normalized === 'cancelled' || normalized === 'canceled') cls += 'bg-slate-100 text-slate-600'
-                            else cls += 'bg-slate-100 text-slate-700'
-                            return <span className={cls}>{raw || 'Unknown'}</span>
-                          })()}
-                        </div>
-                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                          Seller
-                        </div>
-                        <div
-                          className="break-all font-mono text-xs text-slate-800"
-                          title={detail.seller || undefined}
-                        >
-                          {detail.seller ? shortAddress(detail.seller) : '—'}
-                        </div>
-                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                          Investor
-                        </div>
-                        <div
-                          className="break-all font-mono text-xs text-slate-800"
-                          title={(() => {
-                            const inv = detail.investor || ''
-                            return inv && inv !== '11111111111111111111111111111111' ? inv : undefined
-                          })()}
-                        >
-                          {(() => {
-                            const inv = detail.investor || ''
-                            if (!inv || inv === '11111111111111111111111111111111') return 'Not set'
-                            return shortAddress(inv)
-                          })()}
-                        </div>
-                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                          USDC Mint
-                        </div>
-                        <div
-                          className="break-all font-mono text-xs text-slate-800"
-                          title={(() => {
-                            const mint = detail.usdcMint || ''
-                            return mint && mint !== '11111111111111111111111111111111' ? mint : undefined
-                          })()}
-                        >
-                          {(() => {
-                            const mint = detail.usdcMint || ''
-                            return mint && mint !== '11111111111111111111111111111111' ? shortAddress(mint) : '—'
-                          })()}
-                        </div>
-                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                          Shares Mint
-                        </div>
-                        <div
-                          className="flex items-center gap-2 break-all font-mono text-xs text-slate-800"
-                          title={(() => {
-                            const v = detail.sharesMint
-                            const s = v && v.toBase58 ? v.toBase58() : (v || '')
-                            return s && s !== '11111111111111111111111111111111' ? s : undefined
-                          })()}
-                        >
-                          {(() => {
-                            const v = detail.sharesMint
-                            const s = v && v.toBase58 ? v.toBase58() : (v || '')
-                            if (!s || s === '11111111111111111111111111111111') return '—'
-                            return shortAddress(s)
-                          })()}
-                          {(() => {
-                            const v = detail.sharesMint
-                            const s = v && v.toBase58 ? v.toBase58() : (v || '')
-                            return s && s !== '11111111111111111111111111111111'
-                              ? <a href={`https://solscan.io/address/${s}?cluster=devnet`} target="_blank" rel="noreferrer" className="text-brand hover:text-brand-dark">View</a>
-                              : null
-                          })()}
-                        </div>
-                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                          Amount
-                        </div>
-                        <div className="text-xs text-slate-900">
-                          {(() => {
-                            const raw = (detailDb?.amount ?? (detail?.amount as any))
-                            if (raw && typeof raw === 'object' && 'toNumber' in raw) return fmt6((raw as any).toNumber())
-                            return fmt6(raw)
-                          })()} USDC
-                        </div>
-                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                          Funded
-                        </div>
-                        <div className="text-xs text-slate-900">
-                          {(() => {
-                            const raw = (detailDb?.fundedAmount ?? (detail?.fundedAmount as any))
-                            if (raw && typeof raw === 'object' && 'toNumber' in raw) return fmt6((raw as any).toNumber())
-                            return fmt6(raw)
-                          })()} USDC
-                        </div>
-                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                          Due Date
-                        </div>
-                        <div className="text-xs text-slate-900">{fmtDateSmart(detail.dueDate)}</div>
-                        <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                          Links
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs">
-                          <a
-                            href={`https://solscan.io/address/${selected}?cluster=devnet`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-brand hover:text-brand-dark"
-                          >
-                            Invoice
-                          </a>
-                          {detail.usdcMint ? (
-                            <a
-                              href={`https://solscan.io/address/${detail.usdcMint}?cluster=devnet`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-brand hover:text-brand-dark"
+                          <TableCell className="text-xs text-slate-500">
+                            {rowNumber}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-slate-800">
+                            {shortAddress(it.invoicePk)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={it.status === 'Open' ? 'warning' : it.status === 'Funded' ? 'success' : 'default'}
                             >
-                              USDC Mint
-                            </a>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Listings */}
-                    <div className="border-t border-slate-100 pt-4">
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Listings</h3>
-                        {(() => {
-                          const me = walletAdapter.publicKey?.toBase58()
-                          if (!me) return null
-                          const pos = positions.find((p) => p.wallet === me)
-                          if (!pos) return null
-                          let balanceBase = 0
-                          try {
-                            balanceBase = Number(pos.amount || '0')
-                          } catch {}
-                          if (!Number.isFinite(balanceBase) || balanceBase <= 0) return null
-
-                          // Subtract already-open listings for this seller on this invoice
-                          let reservedBase = 0
-                          for (const l of listings) {
-                            if (l.seller !== me || l.status !== 'Open') continue
-                            try {
-                              const raw = (l as any).remainingQty ?? (l as any).qty
-                              const n = Number(raw)
-                              if (Number.isFinite(n) && n > 0) reservedBase += n
-                            } catch {}
-                          }
-                          const availableBase = Math.max(balanceBase - reservedBase, 0)
-                          if (availableBase <= 0) return null
-                          const shares = availableBase / 1_000_000
-                          return (
-                            <span className="text-[11px] text-slate-500">
-                              Available: <span className="font-medium text-slate-700">{shares.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares</span>
-                            </span>
-                          )
-                        })()}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        {(() => {
-                          const me = walletAdapter.publicKey?.toBase58()
-                          const canList = !!me
-                          return (
-                            <>
-                              <div className="w-40">
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  step="0.000001"
-                                  title="Price per share in USDC (6 decimals). Converted to base units on submit."
-                                  value={listPrice}
-                                  onChange={(e) => setListPrice(e.target.value)}
-                                  placeholder="Price (USDC/share)"
-                                  className="h-8 text-[11px]"
-                                />
-                              </div>
-                              <div className="w-40">
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  step="0.000001"
-                                  title="Quantity in shares (6 decimals). Converted to base units on submit."
-                                  value={listQty}
-                                  onChange={(e) => setListQty(e.target.value)}
-                                  placeholder="Qty (shares)"
-                                  className="h-8 text-[11px]"
-                                />
-                              </div>
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={handleCreateListing}
-                                loading={createListingLoading}
-                                disabled={!canList}
+                              {it.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-slate-700">
+                            {shortAddress(it.seller)}
+                          </TableCell>
+                          <TableCell className="text-xs text-slate-800">
+                            <span className="font-medium">{funded.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                            <span className="text-slate-500"> / {amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC</span>
+                            {amount > 0 && (
+                              <span className="ml-1 text-slate-500">
+                                · {fundedPct.toLocaleString(undefined, { maximumFractionDigits: 1 })}%
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <a
+                                href={`https://solscan.io/address/${it.invoicePk}?cluster=devnet`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[#8437EB] hover:text-[#7105fe]"
                               >
-                                Create listing
-                              </Button>
-                              {!canList ? (
-                                <span className="text-[11px] text-slate-500">Connect wallet to list shares</span>
+                                Invoice
+                              </a>
+                              <a
+                                href={`https://solscan.io/address/${it.escrowToken}?cluster=devnet`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[#8437EB] hover:text-[#7105fe]"
+                              >
+                                Escrow
+                              </a>
+                              {it.lastSig ? (
+                                <a
+                                  href={`https://solscan.io/tx/${it.lastSig}?cluster=devnet`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[#002356] hover:text-brand-dark"
+                                >
+                                  Last tx
+                                </a>
                               ) : null}
-                            </>
-                          )
-                        })()}
-                      </div>
-                      <div className="mt-3 text-xs text-slate-700">
-                        {listingsLoading ? (
-                          <div>Loading listings...</div>
-                        ) : listings.length === 0 ? (
-                          <div className="text-slate-500">No listings</div>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="hidden grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,2.2fr)] text-[11px] font-medium uppercase tracking-wide text-slate-500 md:grid">
-                              <div>Seller</div>
-                              <div>Price</div>
-                              <div>Remaining</div>
-                              <div>Actions</div>
                             </div>
-                            {listings.map((l) => {
-                              const price = Number(l.price) / 1_000_000
-                              const remain = Number(l.remainingQty) / 1_000_000
-                              const me = walletAdapter.publicKey?.toBase58()
-                              const isMyListing = me === l.seller
-                              const canCancel = isMyListing && l.status === 'Open'
-                              const canFill = l.status === 'Open'
-                              return (
-                                <div
-                                  key={l.id}
-                                  className="grid grid-cols-1 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,2.2fr)]"
-                                >
-                                  <div className="break-all font-mono text-xs text-slate-800">
-                                    {l.seller}{' '}
-                                    {isMyListing ? <span className="ml-1 text-[10px] text-emerald-500">(you)</span> : null}
-                                  </div>
-                                  <div className="text-xs text-slate-900">
-                                    {price} <span className="text-slate-500">USDC/share</span>
-                                  </div>
-                                  <div className="text-xs text-slate-900">
-                                    {remain} <span className="text-slate-500">shares</span>{' '}
-                                    {l.escrowDeposited ? <span className="text-[10px] text-slate-500">(deposited)</span> : null}
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                                    {canCancel && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleCancelListing(l.id)}
-                                      >
-                                        Cancel
-                                      </Button>
-                                    )}
-                                    {!allowanceEnabled && canCancel && !depositedIds[l.id] && !l.escrowDeposited && (
-                                      <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        onClick={() => handleDepositListingOnchain(l.id)}
-                                        loading={depositLoadingId === l.id}
-                                      >
-                                        Deposit shares
-                                      </Button>
-                                    )}
-                                    {allowanceEnabled && isMyListing && l.status === 'Open' && !l.onChain && (
-                                      <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        onClick={() => handleInitListingV2(l.id)}
-                                        loading={initV2LoadingId === l.id}
-                                      >
-                                        Init on-chain (V2)
-                                      </Button>
-                                    )}
-                                    {allowanceEnabled && isMyListing && l.status === 'Open' && (
-                                      <>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleApproveSharesV2(l.id)}
-                                          loading={approveSharesLoadingId === l.id}
-                                        >
-                                          Approve shares
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleRevokeSharesV2(l.id)}
-                                        >
-                                          Revoke shares
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleCancelListingOnchainV2(l.id)}
-                                        >
-                                          Cancel on-chain (V2)
-                                        </Button>
-                                      </>
-                                    )}
-                                    {canFill ? (
-                                      <>
-                                        <div className="w-24">
-                                          <Input
-                                            type="number"
-                                            min="0"
-                                            step="0.000001"
-                                            title="Quantity to buy in shares (6 decimals)."
-                                            value={fillQtyById[l.id] || ''}
-                                            onChange={(e) => setFillQtyById((m) => ({ ...m, [l.id]: e.target.value }))}
-                                            placeholder="Qty"
-                                            className="h-8 text-[11px]"
-                                          />
-                                        </div>
-                                        {allowanceEnabled ? (
-                                          <>
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={() => handleApproveUsdcV2(l.id)}
-                                              loading={approveUsdcLoadingId === l.id}
-                                            >
-                                              Approve USDC
-                                            </Button>
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={() => handleRevokeUsdcV2(l.id)}
-                                            >
-                                              Revoke USDC
-                                            </Button>
-                                            <Button
-                                              variant="primary"
-                                              size="sm"
-                                              onClick={() => handleFulfillListingOnchainV2(l.id)}
-                                              loading={fillLoadingId === l.id}
-                                            >
-                                              Fill on-chain (V2)
-                                            </Button>
-                                          </>
-                                        ) : (
-                                          <Button
-                                            variant="primary"
-                                            size="sm"
-                                            onClick={() => handleFulfillListingOnchain(l.id)}
-                                            loading={fillLoadingId === l.id}
-                                          >
-                                            Fill on-chain
-                                          </Button>
-                                        )}
-                                      </>
-                                    ) : (
-                                      <span className="text-[11px] text-slate-500">{l.status}</span>
-                                    )}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
 
-                    {/* Fractional */}
-                    <div className="border-t border-slate-100 pt-4">
-                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Fractional</h3>
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        {(() => {
-                          const v = detail.sharesMint; const s = v && v.toBase58 ? v.toBase58() : (v || '')
-                          const hasShares = !!s && s !== '11111111111111111111111111111111'
-                          if (!hasShares) {
-                            return (
-                              <>
-                                {mode === 'backend' ? (
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={async () => {
-                                      if (!selected) return
-                                      setFxError(null)
-                                      setInitLoading(true)
-                                      try{
-                                        const r = await fetch(`${backend}/api/invoice/${selected}/init-shares`, { method: 'POST', headers: { ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) } })
-                                        const j = await r.json()
-                                        if (!j.ok) throw new Error(j.error || 'init failed')
-                                        show({ text: 'Init shares submitted', href: `https://explorer.solana.com/tx/${j.tx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
-                                        await loadDetail(selected)
-                                        await load()
-                                      }catch(e: any){ setFxError(e?.message || String(e)) }
-                                      finally{ setInitLoading(false) }
-                                    }}
-                                    disabled={initLoading}
-                                  >
-                                    {initLoading ? 'Initializing…' : 'Init shares (Backend)'}
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    variant="primary"
-                                    size="sm"
-                                    onClick={handleInitSharesWithWallet}
-                                    disabled={initWalletLoading || !walletAdapter.publicKey}
-                                  >
-                                    {initWalletLoading ? 'Initializing…' : 'Init shares (Wallet)'}
-                                  </Button>
-                                )}
-                                {fxError ? <span className="text-[11px] text-red-600">{fxError}</span> : null}
-                              </>
-                            )
-                          }
-                          return (
-                            <>
-                              <div className="w-40">
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  step="0.000001"
-                                  title="Amount in USDC (6 decimals). Converted to base units on submit."
-                                  value={fracAmount}
-                                  onChange={(e) => setFracAmount(e.target.value)}
-                                  placeholder="Amount (USDC)"
-                                  className="h-8 text-[11px]"
-                                />
-                              </div>
-                              {mode === 'backend' ? (
-                                <Button
-                                  variant="primary"
-                                  size="sm"
-                                  onClick={async () => {
-                                    if (!selected) return
-                                    const n = Number(fracAmount)
-                                    if (!Number.isFinite(n) || n <= 0) { setFxError('Enter a valid amount'); return }
-                                    const base = Math.round(n * 1_000_000)
-                                    setFxError(null)
-                                    setFxLoading(true)
-                                    try{
-                                      const r = await fetch(`${backend}/api/invoice/${selected}/fund-fractional`, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json', ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) },
-                                        body: JSON.stringify({ amount: String(base) })
-                                      })
-                                      const j = await r.json()
-                                      if (!j.ok) throw new Error(j.error || 'fund failed')
-                                      show({ text: 'Fund fraction submitted', href: `https://explorer.solana.com/tx/${j.tx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
-                                      setFracAmount('')
-                                      await loadDetail(selected)
-                                      await load()
-                                    }catch(e: any){ setFxError(e?.message || String(e)) }
-                                    finally{ setFxLoading(false) }
-                                  }}
-                                  disabled={fxLoading}
-                                >
-                                  {fxLoading ? 'Funding…' : 'Fund fraction (Backend)'}
-                                </Button>
-                              ) : (
-                                <Button
-                                  variant="primary"
-                                  size="sm"
-                                  onClick={handleFundFractionWithWallet}
-                                  disabled={fxWalletLoading || !walletAdapter.publicKey}
-                                >
-                                  {fxWalletLoading ? 'Funding…' : 'Fund fraction (Wallet)'}
-                                </Button>
-                              )}
-                              {fxError ? <span className="text-[11px] text-red-600">{fxError}</span> : null}
-                            </>
-                          )
-                        })()}
-                      </div>
+                {pageCount > 1 && (
+                  <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+                    <div>
+                      Showing {startIndex + 1}–{Math.min(startIndex + pagedItems.length, items.length)} of {items.length}
                     </div>
-
-                    {/* Positions */}
-                    <div className="border-t border-slate-100 pt-4">
-                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Positions</h3>
-                      <div className="text-xs text-slate-700">
-                        {positions.length === 0 ? (
-                          <span className="text-slate-500">None</span>
-                        ) : (
-                          <div className="grid gap-2">
-                            {positions.map((p) => {
-                              const balanceLabel = (() => {
-                                try {
-                                  const n = Number(p.amount) / 1_000_000
-                                  return `${n.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares`
-                                } catch {
-                                  return `${p.amount} shares`
-                                }
-                              })()
-                              return (
-                                <div
-                                  key={p.wallet}
-                                  className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2"
-                                >
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <span className="break-all font-mono text-xs text-slate-800">{p.wallet}</span>
-                                  </div>
-                                  <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-slate-700">
-                                    <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                                      Balance
-                                    </span>
-                                    <span className="font-medium">{balanceLabel}</span>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Positions history */}
-                    <div className="border-t border-slate-100 pt-4">
-                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Positions history</h3>
-                      <div className="text-xs text-slate-700">
-                        <div className="mb-2 flex items-center gap-2">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => selected && loadHistory(selected)}
-                            loading={historyLoading}
-                          >
-                            Refresh history
-                          </Button>
-                        </div>
-                        {history.length === 0 ? (
-                          <div className="text-slate-500">No recent changes</div>
-                        ) : (
-                          <div className="mt-1 grid gap-2">
-                            {history.map((h: { wallet: string; delta: string; newAmount: string; ts: number }, i: number) => {
-                              const parsed = (() => {
-                                try {
-                                  const d = Number(h.delta) / 1_000_000
-                                  const n = Number(h.newAmount) / 1_000_000
-                                  return {
-                                    deltaLabel: `${d >= 0 ? '+' : ''}${d.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares`,
-                                    newLabel: `${n.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares`,
-                                    positive: d > 0,
-                                    negative: d < 0,
-                                  }
-                                } catch {
-                                  return {
-                                    deltaLabel: `${h.delta} shares`,
-                                    newLabel: `${h.newAmount} shares`,
-                                    positive: false,
-                                    negative: false,
-                                  }
-                                }
-                              })()
-                              const when = new Date(h.ts).toLocaleString()
-                              const changeBadgeClasses =
-                                'rounded-full px-2 py-0.5 text-[11px] font-medium ' +
-                                (parsed.positive
-                                  ? 'bg-emerald-50 text-emerald-700'
-                                  : parsed.negative
-                                  ? 'bg-rose-50 text-rose-700'
-                                  : 'bg-slate-100 text-slate-700')
-                              return (
-                                <div
-                                  key={i}
-                                  className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2"
-                                >
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <span className="break-all font-mono text-xs text-slate-800">{h.wallet}</span>
-                                    <span className="text-[11px] text-slate-500">{when}</span>
-                                  </div>
-                                  <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                                        Change
-                                      </span>
-                                      <span className={changeBadgeClasses}>{parsed.deltaLabel}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-slate-600">
-                                      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                                        New balance
-                                      </span>
-                                      <span className="font-medium">{parsed.newLabel}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={currentPage === 1}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      > 
+                        <span className='text-black'>Prev</span>
+                      </Button>
+                      {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
+                        <Button
+                          className='hover:bg-[#012d4f]'
+                          key={p}
+                          variant={p === currentPage ? 'secondary' : 'ghost'}
+                          size="sm"
+                          onClick={() => setPage(p)}
+                        >
+                          {p}
+                        </Button>
+                      ))}
+                      <Button
+                        className=''
+                        variant="ghost"
+                        size="sm"
+                        disabled={currentPage === pageCount}
+                        onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                      >
+                        <span className='text-black'>Next</span>
+                      </Button>
                     </div>
                   </div>
                 )}
-              </CardBody>
-            </Card>
+              </>
+            )}
           </div>
+
+          {selected ? (
+            <div className='fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40'>
+              <motion.div
+              variants={UpToDown}
+              initial="hidden"
+              whileInView="visible"
+              exit="exit"
+              viewport={{
+                once: false
+              }}
+              className="fixed inset-0 z-40 flex items-center justify-center">
+                <div
+                  className="absolute inset-0"
+                  onClick={handleCloseDetail}
+                />
+                <div className="relative z-10 w-full max-w-3xl px-4">
+                  <Card className="max-h-[80vh] overflow-hidden bg-white shadow-xl">
+                    <CardHeader className="border-b border-slate-200">
+                      <div className="flex w-full items-center justify-between gap-2">
+                        <CardTitle>INVOICE DETAILS</CardTitle>
+                        <div className="flex items-center gap-2 text-xs">
+                          <Button
+                            className='animate-dangle'
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => loadDetail(selected)}
+                            disabled={detailLoading}
+                          >
+                            {detailLoading ? 'Loading…' : 'Refresh'}
+                          </Button>
+                          <Button
+                            className='animate-UpDown'
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleCloseDetail}
+                          >
+                            Close
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardBody className="max-h-[70vh] overflow-y-auto">
+                      {detailError ? (
+                        <div className="mb-2 text-xs text-red-600">{detailError}</div>
+                      ) : null}
+                      {!detail || detailLoading ? (
+                        <div className="text-sm text-slate-500">
+                          {detailLoading ? 'Loading…' : 'No data'}
+                        </div>
+                      ) : (
+                        <div className="space-y-6 text-sm">
+                          {/* Summary */}
+                          <div className='flex flex-col justify-center items-center'>
+                            <h3
+                            onClick={openSummary}
+                            className={`${showSummary ? 'mb-3 opacity-100' : 'mb-[-15px] opacity-70'} mx-7 px-32 text-sm font-bold uppercase tracking-wide text-slate-200 rounded-lg  text-center bg-[#03182E] hover:opacity-100 cursor-pointer whitespace-nowrap`}>
+                              Summary {showSummary ? <i className="fa-solid fa-angle-down text-[#0268f7] text-xl"></i> : <i className="fa-solid fa-angle-up text-[#0268f7] text-xl "></i>}
+                            </h3>
+                            <div className={`${showSummary ? 'block' : 'hidden'} grid grid-cols-[140px_minmax(0,1fr)] gap-y-2 pl-10  `}>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600 italic font-serif">
+                                Invoice
+                              </div>
+                              <div
+                                className="break-all font-mono text-xs text-slate-800"
+                                title={selected || undefined}
+                              >
+                                {shortAddress(selected)}
+                              </div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600 italic font-serif">
+                                Status
+                              </div>
+                              <div className="text-xs text-slate-900">
+                                {(() => {
+                                  const raw = (detailDb?.status || (detail.status ? Object.keys(detail.status)[0] : 'unknown')) as string
+                                  const normalized = String(raw || '').toLowerCase()
+                                  let cls = 'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium '
+                                  if (normalized === 'open') cls += 'bg-emerald-50 text-emerald-700'
+                                  else if (normalized === 'funded') cls += 'bg-blue-50 text-blue-700'
+                                  else if (normalized === 'repaid' || normalized === 'settled') cls += 'bg-slate-900 text-slate-50'
+                                  else if (normalized === 'cancelled' || normalized === 'canceled') cls += 'bg-slate-100 text-slate-600'
+                                  else cls += 'bg-slate-100 text-slate-700'
+                                  return <span className={cls}>{raw || 'Unknown'}</span>
+                                })()}
+                              </div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600 italic font-serif">
+                                Seller
+                              </div>
+                              <div
+                                className="break-all font-mono text-xs text-slate-800"
+                                title={detail.seller || undefined}
+                              >
+                                {detail.seller ? shortAddress(detail.seller) : '—'}
+                              </div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600 italic font-serif">
+                                Investor
+                              </div>
+                              <div
+                                className="break-all font-mono text-xs text-slate-800"
+                                title={(() => {
+                                  const inv = detail.investor || ''
+                                  return inv && inv !== '11111111111111111111111111111111' ? inv : undefined
+                                })()}
+                              >
+                                {(() => {
+                                  const inv = detail.investor || ''
+                                  if (!inv || inv === '11111111111111111111111111111111') return 'Not set'
+                                  return shortAddress(inv)
+                                })()}
+                              </div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600 italic font-serif">
+                                USDC Mint
+                              </div>
+                              <div
+                                className="break-all font-mono text-xs text-slate-800"
+                                title={(() => {
+                                  const mint = detail.usdcMint || ''
+                                  return mint && mint !== '11111111111111111111111111111111' ? mint : undefined
+                                })()}
+                              >
+                                {(() => {
+                                  const mint = detail.usdcMint || ''
+                                  return mint && mint !== '11111111111111111111111111111111' ? shortAddress(mint) : '—'
+                                })()}
+                              </div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600 italic font-serif">
+                                Shares Mint
+                              </div>
+                              <div
+                                className="flex items-center gap-2 break-all font-mono text-xs text-slate-800"
+                                title={(() => {
+                                  const v = detail.sharesMint
+                                  const s = v && v.toBase58 ? v.toBase58() : (v || '')
+                                  return s && s !== '11111111111111111111111111111111' ? s : undefined
+                                })()}
+                              >
+                                {(() => {
+                                  const v = detail.sharesMint
+                                  const s = v && v.toBase58 ? v.toBase58() : (v || '')
+                                  if (!s || s === '11111111111111111111111111111111') return '—'
+                                  return shortAddress(s)
+                                })()}
+                                {(() => {
+                                  const v = detail.sharesMint
+                                  const s = v && v.toBase58 ? v.toBase58() : (v || '')
+                                  return s && s !== '11111111111111111111111111111111'
+                                    ? <a href={`https://solscan.io/address/${s}?cluster=devnet`} target="_blank" rel="noreferrer" className="text-brand hover:text-brand-dark">View</a>
+                                    : null
+                                })()}
+                              </div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600 italic font-serif">
+                                Amount
+                              </div>
+                              <div className="text-xs text-slate-900">
+                                {(() => {
+                                  const raw = (detailDb?.amount ?? (detail?.amount as any))
+                                  if (raw && typeof raw === 'object' && 'toNumber' in raw) return fmt6((raw as any).toNumber())
+                                  return fmt6(raw)
+                                })()} USDC
+                              </div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600 italic font-serif">
+                                Funded
+                              </div>
+                              <div className="text-xs text-slate-900">
+                                {(() => {
+                                  const raw = (detailDb?.fundedAmount ?? (detail?.fundedAmount as any))
+                                  if (raw && typeof raw === 'object' && 'toNumber' in raw) return fmt6((raw as any).toNumber())
+                                  return fmt6(raw)
+                                })()} USDC
+                              </div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600 italic font-serif">
+                                Due Date
+                              </div>
+                              <div className="text-xs text-slate-900">{fmtDateSmart(detail.dueDate)}</div>
+                              <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600 italic font-serif">
+                                Links
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 text-xs">
+                                <a
+                                  href={`https://solscan.io/address/${selected}?cluster=devnet`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-brand hover:text-brand-dark"
+                                >
+                                  Invoice
+                                </a>
+                                {detail.usdcMint ? (
+                                  <a
+                                    href={`https://solscan.io/address/${detail.usdcMint}?cluster=devnet`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-brand hover:text-brand-dark"
+                                  >
+                                    USDC Mint
+                                  </a>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Listings */}
+                          <div className="border-t border-slate-400 pt-4">
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-800">Listings</h3>
+                              {(() => {
+                                const me = walletAdapter.publicKey?.toBase58()
+                                if (!me) return null
+                                const pos = positions.find((p) => p.wallet === me)
+                                if (!pos) return null
+                                let balanceBase = 0
+                                try {
+                                  balanceBase = Number(pos.amount || '0')
+                                } catch {}
+                                if (!Number.isFinite(balanceBase) || balanceBase <= 0) return null
+
+                                // Subtract already-open listings for this seller on this invoice
+                                let reservedBase = 0
+                                for (const l of listings) {
+                                  if (l.seller !== me || l.status !== 'Open') continue
+                                  try {
+                                    const raw = (l as any).remainingQty ?? (l as any).qty
+                                    const n = Number(raw)
+                                    if (Number.isFinite(n) && n > 0) reservedBase += n
+                                  } catch {}
+                                }
+                                const availableBase = Math.max(balanceBase - reservedBase, 0)
+                                if (availableBase <= 0) return null
+                                const shares = availableBase / 1_000_000
+                                return (
+                                  <span className="text-[11px] text-slate-500">
+                                    Available: <span className="font-medium text-slate-700">{shares.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares</span>
+                                  </span>
+                                )
+                              })()}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              {(() => {
+                                const me = walletAdapter.publicKey?.toBase58()
+                                const canList = !!me
+                                return (
+                                  <>
+                                    <div className="w-40">
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.000001"
+                                        title="Price per share in USDC (6 decimals). Converted to base units on submit."
+                                        value={listPrice}
+                                        onChange={(e) => setListPrice(e.target.value)}
+                                        placeholder="Price (USDC/share)"
+                                        className="h-8 text-[11px] bg-[#e7e7e7]"
+                                      />
+                                    </div>
+                                    <div className="w-40">
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.000001"
+                                        title="Quantity in shares (6 decimals). Converted to base units on submit."
+                                        value={listQty}
+                                        onChange={(e) => setListQty(e.target.value)}
+                                        placeholder="Qty (shares)"
+                                        className="h-8 text-[11px] bg-[#e7e7e7]"
+                                      />
+                                    </div>
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={handleCreateListing}
+                                      loading={createListingLoading}
+                                      disabled={!canList}
+                                    >
+                                      Create listing
+                                    </Button>
+                                    {!canList ? (
+                                      <span className="text-[11px] text-slate-500">Connect wallet to list shares</span>
+                                    ) : null}
+                                  </>
+                                )
+                              })()}
+                            </div>
+                            <div className="mt-3 text-xs text-slate-700">
+                              {listingsLoading ? (
+                                <div>Loading listings...</div>
+                              ) : listings.length === 0 ? (
+                                <div className="text-slate-500">No listings</div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <div className="hidden grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,2.2fr)] text-[11px] font-medium uppercase tracking-wide text-slate-500 md:grid">
+                                    <div>Seller</div>
+                                    <div>Price</div>
+                                    <div>Remaining</div>
+                                    <div>Actions</div>
+                                  </div>
+                                  {listings.map((l) => {
+                                    const price = Number(l.price) / 1_000_000
+                                    const remain = Number(l.remainingQty) / 1_000_000
+                                    const me = walletAdapter.publicKey?.toBase58()
+                                    const isMyListing = me === l.seller
+                                    const canCancel = isMyListing && l.status === 'Open'
+                                    const canFill = l.status === 'Open'
+                                    return (
+                                      <div
+                                        key={l.id}
+                                        className="grid grid-cols-1 items-center gap-2 rounded-md border border-slate-500 px-3 py-2 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,2.2fr)] bg-[#e7e7e7]"
+                                      >
+                                        <div className="break-all font-mono text-xs text-slate-800">
+                                          {l.seller}{' '}
+                                          {isMyListing ? <span className="ml-1 text-[10px] text-emerald-500">(you)</span> : null}
+                                        </div>
+                                        <div className="text-xs text-slate-900">
+                                          {price} <span className="text-slate-500">USDC/share</span>
+                                        </div>
+                                        <div className="text-xs text-slate-900">
+                                          {remain} <span className="text-slate-500">shares</span>{' '}
+                                          {l.escrowDeposited ? <span className="text-[10px] text-slate-500">(deposited)</span> : null}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                                          {canCancel && (
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handleCancelListing(l.id)}
+                                            >
+                                              Cancel
+                                            </Button>
+                                          )}
+                                          {!allowanceEnabled && canCancel && !depositedIds[l.id] && !l.escrowDeposited && (
+                                            <Button
+                                              variant="secondary"
+                                              size="sm"
+                                              onClick={() => handleDepositListingOnchain(l.id)}
+                                              loading={depositLoadingId === l.id}
+                                            >
+                                              Deposit shares
+                                            </Button>
+                                          )}
+                                          {allowanceEnabled && isMyListing && l.status === 'Open' && !l.onChain && (
+                                            <Button
+                                              variant="secondary"
+                                              size="sm"
+                                              onClick={() => handleInitListingV2(l.id)}
+                                              loading={initV2LoadingId === l.id}
+                                            >
+                                              Init on-chain (V2)
+                                            </Button>
+                                          )}
+                                          {allowanceEnabled && isMyListing && l.status === 'Open' && (
+                                            <>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleApproveSharesV2(l.id)}
+                                                loading={approveSharesLoadingId === l.id}
+                                              >
+                                                Approve shares
+                                              </Button>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleRevokeSharesV2(l.id)}
+                                              >
+                                                Revoke shares
+                                              </Button>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleCancelListingOnchainV2(l.id)}
+                                              >
+                                                Cancel on-chain (V2)
+                                              </Button>
+                                            </>
+                                          )}
+                                          {canFill ? (
+                                            <>
+                                              <div className="w-[100px]">
+                                                <Input
+                                                  type="number"
+                                                  min="0"
+                                                  step="0.000001"
+                                                  title="Quantity to buy in shares (6 decimals)."
+                                                  value={fillQtyById[l.id] || ''}
+                                                  onChange={(e) => setFillQtyById((m) => ({ ...m, [l.id]: e.target.value }))}
+                                                  placeholder="Qty"
+                                                  className="h-8 text-[11px] bg-[#c7c7c7] px-[7px]"
+                                                />
+                                              </div>
+                                              {allowanceEnabled ? (
+                                                <>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleApproveUsdcV2(l.id)}
+                                                    loading={approveUsdcLoadingId === l.id}
+                                                  >
+                                                    Approve USDC
+                                                  </Button>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleRevokeUsdcV2(l.id)}
+                                                  >
+                                                    Revoke USDC
+                                                  </Button>
+                                                  <Button
+                                                    variant="primary"
+                                                    size="sm"
+                                                    onClick={() => handleFulfillListingOnchainV2(l.id)}
+                                                    loading={fillLoadingId === l.id}
+                                                  >
+                                                    Fill on-chain (V2)
+                                                  </Button>
+                                                </>
+                                              ) : (
+                                                <Button
+                                                  variant="primary"
+                                                  size="sm"
+                                                  onClick={() => handleFulfillListingOnchain(l.id)}
+                                                  loading={fillLoadingId === l.id}
+                                                >
+                                                  Fill on-chain
+                                                </Button>
+                                              )}
+                                            </>
+                                          ) : (
+                                            <span className="text-[11px] text-slate-500">{l.status}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Fractional */}
+                          <div className="border-t border-slate-400 pt-4">
+                            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-800">Fractional</h3>
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              {(() => {
+                                const v = detail.sharesMint; const s = v && v.toBase58 ? v.toBase58() : (v || '')
+                                const hasShares = !!s && s !== '11111111111111111111111111111111'
+                                if (!hasShares) {
+                                  return (
+                                    <>
+                                      {mode === 'backend' ? (
+                                        <Button
+                                          variant="secondary"
+                                          size="sm"
+                                          onClick={async () => {
+                                            if (!selected) return
+                                            setFxError(null)
+                                            setInitLoading(true)
+                                            try{
+                                              const r = await fetch(`${backend}/api/invoice/${selected}/init-shares`, { method: 'POST', headers: { ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) } })
+                                              const j = await r.json()
+                                              if (!j.ok) throw new Error(j.error || 'init failed')
+                                              show({ text: 'Init shares submitted', href: `https://explorer.solana.com/tx/${j.tx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+                                              await loadDetail(selected)
+                                              await load()
+                                            }catch(e: any){ setFxError(e?.message || String(e)) }
+                                            finally{ setInitLoading(false) }
+                                          }}
+                                          disabled={initLoading}
+                                        >
+                                          {initLoading ? 'Initializing…' : 'Init shares (Backend)'}
+                                        </Button>
+                                      ) : (
+                                        <Button
+                                          variant="primary"
+                                          size="sm"
+                                          onClick={handleInitSharesWithWallet}
+                                          disabled={initWalletLoading || !walletAdapter.publicKey}
+                                        >
+                                          {initWalletLoading ? 'Initializing…' : 'Init shares (Wallet)'}
+                                        </Button>
+                                      )}
+                                      {fxError ? <span className="text-[11px] text-red-600">{fxError}</span> : null}
+                                    </>
+                                  )
+                                }
+                                return (
+                                  <>
+                                    <div className="w-40">
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.000001"
+                                        title="Amount in USDC (6 decimals). Converted to base units on submit."
+                                        value={fracAmount}
+                                        onChange={(e) => setFracAmount(e.target.value)}
+                                        placeholder="Amount (USDC)"
+                                        className="h-8 text-[11px] bg-[#e7e7e7]"
+                                      />
+                                    </div>
+                                    {mode === 'backend' ? (
+                                      <Button
+                                        variant="primary"
+                                        size="sm"
+                                        onClick={async () => {
+                                          if (!selected) return
+                                          const n = Number(fracAmount)
+                                          if (!Number.isFinite(n) || n <= 0) { setFxError('Enter a valid amount'); return }
+                                          const base = Math.round(n * 1_000_000)
+                                          setFxError(null)
+                                          setFxLoading(true)
+                                          try{
+                                            const r = await fetch(`${backend}/api/invoice/${selected}/fund-fractional`, {
+                                              method: 'POST',
+                                              headers: { 'Content-Type': 'application/json', ...(adminWallet ? { 'x-admin-wallet': adminWallet } : {}) },
+                                              body: JSON.stringify({ amount: String(base) })
+                                            })
+                                            const j = await r.json()
+                                            if (!j.ok) throw new Error(j.error || 'fund failed')
+                                            show({ text: 'Fund fraction submitted', href: `https://explorer.solana.com/tx/${j.tx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' })
+                                            setFracAmount('')
+                                            await loadDetail(selected)
+                                            await load()
+                                          }catch(e: any){ setFxError(e?.message || String(e)) }
+                                          finally{ setFxLoading(false) }
+                                        }}
+                                        disabled={fxLoading}
+                                      >
+                                        {fxLoading ? 'Funding…' : 'Fund fraction (Backend)'}
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        variant="primary"
+                                        size="sm"
+                                        onClick={handleFundFractionWithWallet}
+                                        disabled={fxWalletLoading || !walletAdapter.publicKey}
+                                      >
+                                        {fxWalletLoading ? 'Funding…' : 'Fund fraction (Wallet)'}
+                                      </Button>
+                                    )}
+                                    {fxError ? <span className="text-[11px] text-red-600">{fxError}</span> : null}
+                                  </>
+                                )
+                              })()}
+                            </div>
+                          </div>
+
+                          {/* Positions */}
+                          <div className="border-t border-slate-400 pt-4">
+                            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-800">Positions</h3>
+                            <div className="text-xs text-slate-700">
+                              {positions.length === 0 ? (
+                                <span className="text-slate-500">None</span>
+                              ) : (
+                                <div className="grid gap-2">
+                                  {positions.map((p) => {
+                                    const balanceLabel = (() => {
+                                      try {
+                                        const n = Number(p.amount) / 1_000_000
+                                        return `${n.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares`
+                                      } catch {
+                                        return `${p.amount} shares`
+                                      }
+                                    })()
+                                    return (
+                                      <div
+                                        key={p.wallet}
+                                        className="rounded-md border border-slate-500 px-3 py-2 bg-[#e7e7e7]"
+                                      >
+                                        <div className="flex flex-wrap items-center justify-between gap-2 ">
+                                          <span className="break-all font-mono text-xs text-slate-800 ">{p.wallet}</span>
+                                        </div>
+                                        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-slate-700">
+                                          <span className="text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                                            Balance
+                                          </span>
+                                          <span className="font-medium text-slate-800">{balanceLabel}</span>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Positions history */}
+                          <div className="border-t border-slate-400 pt-4">
+                            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-800">Positions history</h3>
+                            <div className="text-xs text-slate-700">
+                              <div className="mb-2 flex items-center gap-2">
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => selected && loadHistory(selected)}
+                                  loading={historyLoading}
+                                >
+                                  Refresh history
+                                </Button>
+                              </div>
+                              {history.length === 0 ? (
+                                <div className="text-slate-500">No recent changes</div>
+                              ) : (
+                                <div className="mt-1 grid gap-2">
+                                  {history.map((h: { wallet: string; delta: string; newAmount: string; ts: number }, i: number) => {
+                                    const parsed = (() => {
+                                      try {
+                                        const d = Number(h.delta) / 1_000_000
+                                        const n = Number(h.newAmount) / 1_000_000
+                                        return {
+                                          deltaLabel: `${d >= 0 ? '+' : ''}${d.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares`,
+                                          newLabel: `${n.toLocaleString(undefined, { maximumFractionDigits: 6 })} shares`,
+                                          positive: d > 0,
+                                          negative: d < 0,
+                                        }
+                                      } catch {
+                                        return {
+                                          deltaLabel: `${h.delta} shares`,
+                                          newLabel: `${h.newAmount} shares`,
+                                          positive: false,
+                                          negative: false,
+                                        }
+                                      }
+                                    })()
+                                    const when = new Date(h.ts).toLocaleString()
+                                    const changeBadgeClasses =
+                                      'rounded-full px-2 py-0.5 text-[11px] font-medium ' +
+                                      (parsed.positive
+                                        ? 'bg-emerald-50 text-emerald-700'
+                                        : parsed.negative
+                                        ? 'bg-rose-50 text-rose-700'
+                                        : 'bg-slate-100 text-slate-700')
+                                    return (
+                                      <div
+                                        key={i}
+                                        className="rounded-md border border-slate-500 px-3 py-2 bg-[#e7e7e7]"
+                                      >
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <span className="break-all font-mono text-xs text-slate-800">{h.wallet}</span>
+                                          <span className="text-[11px] text-slate-700">{when}</span>
+                                        </div>
+                                        <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                                              Change
+                                            </span>
+                                            <span className={changeBadgeClasses}>{parsed.deltaLabel}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2 text-slate-600">
+                                            <span className="text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                                              New balance
+                                            </span>
+                                            <span className="font-medium text-slate-800">{parsed.newLabel}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </CardBody>
+                  </Card>
+                </div>
+              </motion.div>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </div>
+
+
     </div>
   )
 }

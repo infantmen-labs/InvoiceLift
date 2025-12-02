@@ -48,7 +48,7 @@ button {
 
 /* Select Wallet Button */
 .btn {
-  --border-color: linear-gradient(-45deg, #ffae00, #7e03aa, #002254);
+  --border-color: linear-gradient(-45deg, #002457, #7e03aa, #002254);
   --border-width: 0.125em;
   --curve-size: 0.5em;
   --blur: 30px;
@@ -386,52 +386,87 @@ button {
 
 @media (min-width: 350px) {
   .cardInvoice1 {
-    height: 196px;
+    height: 199px;
+  }
+}
+@media (min-width: 430px) {
+  .cardInvoice1 {
+    height: 169px;
   }
 }
 @media (min-width: 500px) {
   .cardInvoice1 {
-    height: 165px;
+    height: 168px;
   }
 }
 @media (min-width: 530px) {
   .cardInvoice1 {
-    height: 147px;
+    height: 150px;
   }
 }
 @media (min-width: 631px) {
   .cardInvoice1 {
-    height: 119px;
+    height: 122px;
   }
 }
 @media (min-width: 1023px) {
   .cardInvoice1 {
-    height: 212px;
+    height: 215px;
   }
 }
 @media (min-width: 1076px) {
   .cardInvoice1 {
-    height: 196px;
+    height: 199px;
+  }
+}
+@media (min-width: 1129px) {
+  .cardInvoice1 {
+    height: 167px;
+  }
+}
+@media (min-width: 1132px) {
+  .cardInvoice1 {
+    height: 166px;
   }
 }
 @media (min-width: 1138px) {
   .cardInvoice1 {
-    height: 164px;
+    height: 167px;
+  }
+}
+@media (min-width: 1208px) {
+  .cardInvoice1 {
+    height: 153px;
+  }
+}
+@media (min-width: 1214px) {
+  .cardInvoice1 {
+    height: 153px;
   }
 }
 @media (min-width: 1218px) {
   .cardInvoice1 {
-    height: 148px;
+    height: 151px;
+  }
+}
+@media (min-width: 1306px) {
+  .cardInvoice1 {
+    height: 123px;
+  }
+}
+@media (min-width: 1310px) {
+  .cardInvoice1 {
+    height: 123px;
   }
 }
 @media (min-width: 1317px) {
   .cardInvoice1 {
-    height: 148px;
+    height: 123px;
   }
 }
 @media (min-width: 1318px) {
   .cardInvoice1 {
-    height: 120px;
+    height: 123px;
   }
 }
 
@@ -708,3 +743,30 @@ button {
 }
 
 
+@media (min-width: 450px) {
+  .Table {
+    width: 100%;
+    padding: 20px 0 20px 0 ;
+  }
+}
+
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 3px;
+  
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #03182E ;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #062d56;
+  cursor: pointer;
+}
