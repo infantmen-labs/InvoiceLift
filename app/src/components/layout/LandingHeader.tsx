@@ -1,6 +1,8 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { Rocket } from 'lucide-react';
+
 
 
 const UpToDown = {
@@ -13,10 +15,6 @@ const UpToDown = {
     y: 0,
     transition: { type: 'spring', delay: 0.2 }
   },
-  exit: {
-    y: "-50px",
-    transition: { ease: 'easeInOut' }
-  }
 };
 
 
@@ -26,14 +24,16 @@ export function LandingHeader(){
       variants={UpToDown}
       initial="hidden"
       whileInView="visible"
-      exit="exit"
-      viewport={{
-        once: false
-      }}
-      className="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+      className="fixed w-full border-b border-slate-800 bg-slate-950/80 backdrop-blur z-10">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-6">
         <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-brand/20 ring-1 ring-brand/40" />
+          {/* Logo */}
+          <div className="inline-flex items-center justify-center">
+            <div className="p-3 bg-gradient-to-br from-purple-600/20 to-purple-800/20 rounded-2xl backdrop-blur-sm border border-purple-500/30">
+              <img width={22} src='../../favicon/PRocket.png' alt="logo" className='animate-rocket' />
+            </div>
+          </div>
+
           <div className="flex flex-col">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">InvoiceLift</span>
             <span className="text-[11px] text-slate-500">Invoice financing on Solana</span>

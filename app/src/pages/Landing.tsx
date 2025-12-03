@@ -149,7 +149,7 @@ export function Landing(){
               once: false
             }}
             className="flex-1 space-y-5">
-              <p className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-emerald-200">
+              <p className="inline-flex mt-10 items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-emerald-200">
                 Devnet PoC · Invoice Financing on Solana
               </p>
               <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl">

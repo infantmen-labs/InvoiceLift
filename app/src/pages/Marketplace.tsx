@@ -512,7 +512,7 @@ export function Marketplace(){
                   {canFill ? (
                     <div
                     onClick={(e) => e.stopPropagation()}
-                    className={`${openItems[l.id] ? 'block' : 'hidden'} z-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2`}>
+                    className={`${openItems[l.id] ? 'block' : 'hidden'} z-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 cursor-default`}>
                       <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
                         <span>Buyer actions</span>
                         <span className="text-slate-400">You pay in USDC</span>

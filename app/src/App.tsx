@@ -10,6 +10,7 @@ import { SignerModeProvider } from './state/signerMode';
 import { ToastProvider } from './components/Toast';
 import { MainLayout } from './components/layout/MainLayout';
 import { Landing } from './pages/Landing';
+import { WaitListPage } from './pages/WaitListPage'
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
   constructor(props: any) {
@@ -45,7 +46,9 @@ export default function App(){
         <SignerModeProvider>
           <Routes>
             {/* Public landing page */}
-            <Route path="/" element={<Landing />} />
+            <Route path="/" element={<WaitListPage />} />
+
+            <Route path="/try-demo" element={<Landing />} />
 
             {/* App routes wrapped in MainLayout */}
             <Route

@@ -40,10 +40,22 @@ module.exports = {
         },
       },
 
+      keyframes: {
+        rocket: {
+          '0%':   { transform: 'translate(0, 0) rotate(0deg)' },
+          '20%':  { transform: 'translate(-1px, 1px) rotate(-1deg)' },
+          '40%':  { transform: 'translate(1px, -1px) rotate(1deg)' },
+          '60%':  { transform: 'translate(-1px, 1px) rotate(-1deg)' },
+          '80%':  { transform: 'translate(1px, -1px) rotate(1deg)' },
+          '100%': { transform: 'translate(0, 0) rotate(0deg)' },
+        },
+      },
+
       animation: {
         dangle: 'dangle 3s ease-in-out infinite',
         UpDown: 'UpDown 3s ease-in-out infinite',
         jump: 'jump 3s ease-in-out infinite',
+        rocket: 'rocket 0.15s infinite linear',
       },
     },
   },
