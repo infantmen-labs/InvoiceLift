@@ -13,7 +13,6 @@ export default function InvestorForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log(e)
 
     if (!formData.name || !formData.email || !formData.email.includes('@')) {
       setStatus('error');
@@ -22,13 +21,25 @@ export default function InvestorForm() {
     }
 
     setIsLoading(true);
-    
-    setTimeout(() => {
-      setIsLoading(false)
-    }, 2000)
-
     setStatus('idle');
 
+    try {
+      // 👉 Replacing Supabase submission with console.log
+      console.log("Investor interest submitted:", formData);
+
+      // Optional small delay for UX
+      await new Promise((res) => setTimeout(res, 700));
+
+      setStatus('success');
+      setMessage("Thank you! We'll be in touch soon.");
+      setFormData({ name: '', email: '', interest: '' });
+
+    } catch (err) {
+      setStatus('error');
+      setMessage('Failed to submit. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -46,6 +57,7 @@ export default function InvestorForm() {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+
           <div>
             <input
               type="text"

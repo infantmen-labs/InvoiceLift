@@ -1,12 +1,12 @@
 import React from 'react'
 import Tilt from 'react-parallax-tilt'
-import { motion } from 'framer-motion'
+import { motion, Variants } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { LandingHeader } from '../components/layout/LandingHeader'
 import { LandingFooter } from '../components/layout/LandingFooter'
 
 
-const fadeInAnimationVariants = {
+const fadeInAnimationVariants: Variants = {
   initial: {
     opacity: 0,
     x: -100,
@@ -19,7 +19,7 @@ const fadeInAnimationVariants = {
     },
   },
 }
-const fadeInAnimationVariants1 = {
+const fadeInAnimationVariants1: Variants = {
   initial: {
     opacity: 0,
     x: -100,
@@ -32,7 +32,7 @@ const fadeInAnimationVariants1 = {
     },
   },
 }
-const fadeInAnimationVariants2 = {
+const fadeInAnimationVariants2: Variants = {
   initial: {
     opacity: 0,
     x: -100,
@@ -45,7 +45,7 @@ const fadeInAnimationVariants2 = {
     },
   },
 }
-const fadeInAnimationVariants3 = {
+const fadeInAnimationVariants3: Variants = {
   initial: {
     opacity: 0,
     x: 100,
@@ -58,7 +58,7 @@ const fadeInAnimationVariants3 = {
     },
   },
 }
-const fadeInAnimationVariants4 = {
+const fadeInAnimationVariants4: Variants = {
   initial: {
     opacity: 0,
     x: 100,
@@ -71,7 +71,7 @@ const fadeInAnimationVariants4 = {
     },
   },
 }
-const fadeInAnimationVariants5 = {
+const fadeInAnimationVariants5: Variants = {
   initial: {
     opacity: 0,
     x: 100,
@@ -85,7 +85,7 @@ const fadeInAnimationVariants5 = {
   },
 }
 
-const leftEntry = {
+const leftEntry: Variants = {
   hidden: { 
     opacity: 0, 
     x: '50px' 
@@ -100,7 +100,7 @@ const leftEntry = {
     transition: { ease: 'easeInOut' }
   }
 };
-const rightEntry = {
+const rightEntry: Variants = {
   hidden: { 
     opacity: 0, 
     x: '-50px' 
@@ -116,7 +116,7 @@ const rightEntry = {
   }
 };
 
-const UpToDown = {
+const UpToDown: Variants = {
   hidden: { 
     opacity: 0, 
     y: '-50px' 

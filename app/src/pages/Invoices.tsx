@@ -12,14 +12,16 @@ import { Badge } from '../components/ui/Badge'
 import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card'
 import { StatCard } from '../components/ui/StatCard'
 import { Table, TableBody, TableCell, TableHeader, TableHeadCell, TableRow } from '../components/ui/Table'
-import { motion } from 'framer-motion'
+import { motion, Variants } from 'framer-motion'
 
 
 
-const UpToDown = {
+
+
+const UpToDown: Variants = {
   hidden: { 
     opacity: 0, 
-    y: '-100vh' 
+    y: '-100%' 
   },
   visible: { 
     opacity: 1, 
@@ -27,7 +29,8 @@ const UpToDown = {
     transition: { type: 'spring', delay: 0.2 }
   },
   exit: {
-    y: "100vh",
+    opacity: 0,
+    y: "100%",
     transition: { ease: 'easeInOut' }
   }
 };
@@ -687,7 +690,7 @@ export function Invoices() {
   
         return function() {
           window.removeEventListener("resize", watchWindowWidth)
-          console.log(windowWidth)
+          // console.log(windowWidth)
         }
       }, [windowWidth])
 
@@ -915,14 +918,12 @@ export function Invoices() {
           {selected ? (
             <div className='fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40'>
               <motion.div
-              variants={UpToDown}
-              initial="hidden"
-              whileInView="visible"
-              exit="exit"
-              viewport={{
-                once: false
-              }}
-              className="fixed inset-0 z-40 flex items-center justify-center">
+                variants={UpToDown}
+                initial="hidden"
+                whileInView="visible"
+                exit="exit"
+                viewport={{ once: false }}
+                className="fixed inset-0 z-40 flex items-center justify-center">
                 <div
                   className="absolute inset-0"
                   onClick={handleCloseDetail}

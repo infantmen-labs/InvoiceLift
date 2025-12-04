@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Mail, CheckCircle, AlertCircle } from 'lucide-react';
-// import { submitWaitlist } from '../components/lib/supabase';
+
+
+
+
 
 export default function WaitlistForm() {
   const [email, setEmail] = useState('');
@@ -20,28 +23,23 @@ export default function WaitlistForm() {
     setIsLoading(true);
     setStatus('idle');
 
-    // try {
-    //   const { error } = await ({ email });
+    try {
+      // 👉 Simulate "submission" (no more Supabase)
+      console.log("Waitlist form submitted:", { email });
 
-    //   if (error) {
-    //     if (error.code === '23505') {
-    //       setStatus('error');
-    //       setMessage("You're already on the waitlist!");
-    //     } else {
-    //       setStatus('error');
-    //       setMessage('Something went wrong. Please try again.');
-    //     }
-    //   } else {
-    //     setStatus('success');
-    //     setMessage("You're on the list! We'll notify you at launch.");
-    //     setEmail('');
-    //   }
-    // } catch (err) {
-    //   setStatus('error');
-    //   setMessage('Failed to join waitlist. Please try again.');
-    // } finally {
-    //   setIsLoading(false);
-    // }
+      // Fake slight delay (optional)
+      await new Promise((res) => setTimeout(res, 800));
+
+      setStatus('success');
+      setMessage("You're on the list! We'll notify you at launch.");
+      setEmail('');
+
+    } catch (err) {
+      setStatus('error');
+      setMessage('Failed to join waitlist. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

@@ -1,11 +1,11 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Rocket } from 'lucide-react';
+import { motion, Variants } from 'framer-motion'
+// import { Rocket } from 'lucide-react';
 
 
 
-const UpToDown = {
+const UpToDown: Variants = {
   hidden: { 
     opacity: 0, 
     y: '-50px' 

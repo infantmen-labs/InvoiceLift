@@ -1,5 +1,8 @@
 import { Zap, Shield, Coins, Layers } from 'lucide-react';
 import Tilt from 'react-parallax-tilt'
+import { motion } from 'framer-motion';
+
+import WaitListInfo from './WaitListInfo'
 
 const features = [
   {
@@ -26,7 +29,8 @@ const features = [
 
 export default function Features() {
   return (
-    <div className="relative z-10 max-w-6xl mx-auto px-6 mb-20">
+  <>
+    <div className="relative z-10 max-w-6xl mx-auto px-6 mb-5">
       <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-12">
         Built for the Next Generation
       </h2>
@@ -57,5 +61,11 @@ export default function Features() {
         ))}
       </div>
     </div>
+
+      <div id='Info'>
+        <WaitListInfo />
+      </div>
+  </>
+    
   );
 }
