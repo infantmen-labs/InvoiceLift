@@ -1,5 +1,6 @@
 import { div } from "framer-motion/client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { motion, number } from "framer-motion";
 
 type FAQItem = {
   question: string;
@@ -57,7 +58,7 @@ export default function FAQ() {
   return (
     <div className="flex gap-20 flex-col xl:flex-row  items-center p-5">
       <div className="w-auto px-4 py-5 group bg-gradient-to-br from-white/5 to-white/0 backdrop-blur-sm rounded-2xl border border-gray-700/50 hover:border-purple-500/50 transition-all duration-300 hover:transform hover:scale-105 animate-fade-in">
-        <h2 className={`text-2xl md:text-3xl font-bold ${FAQcolor ? 'text-green-500' : 'text-white'}`}>
+        <h2 className={`text-2xl md:text-3xl font-bold ${FAQcolor ? 'text-green-500' : 'text-white'} transition-colors duration-300`}>
           <span className="hidden sm:block">Frequently Asked Questions</span>
           <span className="sm:hidden">FAQ</span>
         </h2>
@@ -66,18 +67,24 @@ export default function FAQ() {
           {FAQData.map((item, i) => {
             const expanded = openIndex === i;
 
+            useEffect(() => {
+              if (expanded  !== null) {
+                FAQColorChange();
+              }
+            }, [expanded]);
+
             return (
               <div key={i} className="border-b border-gray-200">
                 {/* QUESTION */}
                 <div
-                  onClick={() => {toggle(i); FAQColorChange()}}
+                  onClick={() => toggle(i)}
                   className="flex justify-between gap-8 text-[18px] font-semibold px-6 py-4 cursor-pointer"
                 >
-                  <span className={`${expanded ? 'text-green-500' : 'text-white'}`}>{item.question}</span>
+                  <span className={`${expanded ? 'text-green-500' : 'text-white'} transition-colors duration-300`}>{item.question}</span>
 
                   <span
                     className={`w-6 h-6 bg-gray-200 p-1 rounded-full flex transition-all duration-300 ${
-                      expanded ? "bg-green-500 text-black rotate-180" : ""
+                      expanded ? "bg-green-500 text-black rotate-180 transition-colors duration-300" : ""
                     }`}
                   >
                     <svg
@@ -97,14 +104,15 @@ export default function FAQ() {
                 </div>
 
                 {/* ANSWER */}
-                <div
-                  className={`bg-[#edf2f4] overflow-hidden transition-all duration-200 px-8 ${
-                    expanded ? "max-h-full py-3" : "max-h-0 py-0"
-                  }`}
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={expanded ? {height: "auto", opacity: 1} : {height: 0, opacity: 0}}
+                  transition={{ duration: 0.3 }}
+                  className="bg-[#1E1F3E] text-white rounded-bl-2xl rounded-br-2xl mb-2 border-l border-r border-b border-green-500 overflow-hidden transition-all ease-in-out duration-200 px-8"
                 >
                   {item.answer.map((ans, idx) => (
-                    <div key={idx} className="flex gap-2 my-2">
-                      <span className="w-5 flex-shrink-0 text-green-600 mt-1">
+                    <div key={idx} className="flex gap-2 my-2 hover:scale-105 cursor-default hover:font-bold transition-transform duration-200">
+                      <span className="w-5 flex-shrink-0 text-green-600 mt-1 animate-UpDown">
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
                           viewBox="0 0 20 20"
@@ -119,10 +127,10 @@ export default function FAQ() {
                         </svg>
                       </span>
 
-                      <p className="leading-relaxed">{ans}</p>
+                      <p className="leading-relaxed ">{ans}</p>
                     </div>
                   ))}
-                </div>
+                </motion.div>
               </div>
             );
           })}

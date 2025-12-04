@@ -3,6 +3,7 @@ import Tilt from 'react-parallax-tilt'
 import { motion } from 'framer-motion';
 
 import WaitListInfo from './WaitListInfo'
+import { div } from 'framer-motion/client';
 
 const features = [
   {
@@ -37,27 +38,27 @@ export default function Features() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {features.map((feature, index) => (
-
-          <Tilt
-            tiltMaxAngleX={20} 
-            tiltMaxAngleY={20}
-          >
-            <div
-              key={index}
-              className="group bg-gradient-to-br from-white/5 to-white/0 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50 hover:border-purple-500/50 transition-all duration-300 hover:transform hover:scale-105 animate-fade-in"
-              style={{ animationDelay: `${index * 100}ms` }}
+          <div key={index}>
+            <Tilt
+              tiltMaxAngleX={20} 
+              tiltMaxAngleY={20}
             >
-              <div className="bg-purple-500/10 w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-500/20 transition-colors">
-                <feature.icon className="w-6 h-6 text-purple-400" />
+              <div
+                className="group bg-gradient-to-br from-white/5 to-white/0 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50 hover:border-purple-500/50 transition-all duration-300 hover:transform hover:scale-105 animate-fade-in"
+                style={{ animationDelay: `${index * 100}ms` }}
+              >
+                <div className="bg-purple-500/10 w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-500/20 transition-colors">
+                  <feature.icon className="w-6 h-6 text-purple-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  {feature.title}
+                </h3>
+                <p className="text-gray-400 text-sm leading-relaxed">
+                  {feature.description}
+                </p>
               </div>
-              <h3 className="text-xl font-semibold text-white mb-2">
-                {feature.title}
-              </h3>
-              <p className="text-gray-400 text-sm leading-relaxed">
-                {feature.description}
-              </p>
-            </div>
-          </Tilt>
+            </Tilt>
+          </div>
         ))}
       </div>
     </div>
@@ -65,7 +66,7 @@ export default function Features() {
       <div id='Info'>
         <WaitListInfo />
       </div>
-  </>
+    </>
     
   );
 }

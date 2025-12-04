@@ -38,9 +38,7 @@ module.exports = {
           '40%': { transform: 'translateY(-10px)' },
           '60%': { transform: 'translateY(-5px)' },
         },
-      },
 
-      keyframes: {
         rocket: {
           '0%':   { transform: 'translate(0, 0) rotate(0deg)' },
           '20%':  { transform: 'translate(-1px, 1px) rotate(-1deg)' },
