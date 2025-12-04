@@ -2,9 +2,9 @@
 
 This project makes deliberate use of AI tooling. This document captures the main tools and how they are expected to be used, so prompts in this folder can reference them consistently.
 
-## GPT-5.1 (High Reasoning)
+## GPT-5.1 (High Reasoning) via Windsurf Cascade
 
-- **Role**: Primary AI coding and design assistant.
+- **Role**: Primary AI coding and design assistant, accessed as the Windsurf "Cascade" agent inside the IDE.
 - **Used for**:
   - Pair-programming on backend (Express, SQLite), frontend (React/TypeScript), and Solana Anchor program code.
   - Refactoring, debugging, and performance tuning.

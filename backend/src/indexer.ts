@@ -150,7 +150,11 @@ export async function runIndexer() {
           } catch {}
         }
       } catch {}
-    }catch{}
+    } catch (e: any) {
+      try {
+        console.error('indexer syncAll failed', e?.message || String(e))
+      } catch {}
+    }
   }
   await syncAll()
   const rawInterval = process.env.INDEXER_SYNC_MS ?? '30000'
