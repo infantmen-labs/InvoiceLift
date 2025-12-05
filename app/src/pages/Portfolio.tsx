@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
+import { useNavigate } from 'react-router-dom'
 import { useToast } from '../components/Toast'
 import { Button } from '../components/ui/Button'
 import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card'
@@ -33,11 +34,28 @@ export function Portfolio(){
 
 function PortfolioConnected({ walletStr }: { walletStr: string }){
   const { show } = useToast()
+  const navigate = useNavigate()
   const [items, setItems] = useState<Holding[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   function fmt(a: string){
     try { const n = Number(a) / 1_000_000; return n.toLocaleString(undefined, { maximumFractionDigits: 6 }) } catch { return a }
+  }
+
+  function friendlyError(msg: string){
+    const m = (msg || '').toString()
+    const lower = m.toLowerCase()
+    if (lower.includes('failed to fetch') || lower.includes('networkerror')){
+      return 'Could not reach the InvoiceLift backend. Make sure the backend server is running and reachable from this browser.'
+    }
+    if (m.includes('429')){
+      return 'The RPC or indexer is currently rate-limited. Wait a few seconds, then press Refresh.'
+    }
+    if (m.includes('getProgramAccounts is not available on the Free tier')){
+      return 'The configured RPC provider free tier is blocking indexer queries. Use a different or upgraded RPC URL to see portfolio data.'
+    }
+    return m
   }
 
   const stats = useMemo(() => {
@@ -52,12 +70,19 @@ function PortfolioConnected({ walletStr }: { walletStr: string }){
 
   async function load(){
     setLoading(true)
+    setError(null)
     try{
       const r = await fetch(`${backend}/api/portfolio/${walletStr}`)
       const j = await r.json()
       if (!j.ok) throw new Error(j.error || 'load failed')
       setItems(j.portfolio || [])
-    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+    }catch(e: any){
+      const msg = e?.message || String(e)
+      const friendly = friendlyError(msg)
+      setError(friendly)
+      show({ text: friendly, kind: 'error' })
+      setItems([])
+    }
     finally { setLoading(false) }
   }
 
@@ -83,6 +108,11 @@ function PortfolioConnected({ walletStr }: { walletStr: string }){
           Refresh
         </Button>
       </div>
+      {error && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-950/40 px-3 py-2 text-xs text-amber-100">
+          {error}
+        </div>
+      )}
       <div className="grid w-full max-w-md grid-cols-1 gap-3 sm:grid-cols-2">
         <StatCard label="Positions" value={stats.count.toString()} />
         <StatCard
@@ -90,37 +120,58 @@ function PortfolioConnected({ walletStr }: { walletStr: string }){
           value={stats.totalShares.toLocaleString(undefined, { maximumFractionDigits: 2 })}
         />
       </div>
-      {items.length === 0 ? (
-        <div className="text-sm text-slate-500">No holdings found for this wallet.</div>
+      {loading && !items.length ? (
+        <div className="mt-2 space-y-2">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-16 w-full max-w-2xl rounded-xl border border-slate-800/60 bg-slate-900/40 animate-pulse"
+            />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <div className="mt-2 rounded-xl border border-slate-800/60 bg-slate-900/40 p-4 text-sm text-slate-400">
+          No holdings found for this wallet yet. After you fund an invoice or buy shares in the Marketplace, your
+          positions will appear here.
+        </div>
       ) : (
         <div className="grid gap-3">
           {items.map((h) => (
-            <Card key={`${h.invoice}:${h.sharesMint}`}>
-              <CardBody className="grid gap-2 text-sm sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1.6fr)] sm:items-center">
+            <Card
+              key={`${h.invoice}:${h.sharesMint}`}
+              className="border-slate-700/70 bg-slate-900/40 shadow-sm shadow-slate-900/40 backdrop-blur-sm"
+            >
+              <CardBody className="grid gap-2 text-sm text-slate-100 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.3fr)_minmax(0,1.6fr)] sm:items-center">
                 <div>
-                  <div className="text-[11px] uppercase tracking-wide text-slate-500">Invoice</div>
-                  <div className="font-mono break-all text-slate-800">{h.invoice}</div>
+                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Invoice</div>
+                  <button
+                    type="button"
+                    className="font-mono break-all text-left text-slate-50 hover:text-indigo-300 underline-offset-2 hover:underline"
+                    onClick={() => navigate(`/invoice/${h.invoice}`)}
+                  >
+                    {h.invoice}
+                  </button>
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-wide text-slate-500">Shares</div>
-                  <div className="text-slate-800">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Shares</div>
+                  <div className="text-slate-50">
                     {fmt(h.amount)}{' '}
                     <a
                       href={`https://solscan.io/address/${h.sharesMint}?cluster=devnet`}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-brand hover:text-brand-dark"
+                      className="text-indigo-300 hover:text-indigo-200 underline-offset-2 hover:underline"
                     >
                       mint
                     </a>
                   </div>
                 </div>
-                <div className="mt-2 justify-self-start text-xs text-brand sm:mt-0 sm:justify-self-end">
+                <div className="mt-2 justify-self-start text-xs text-indigo-300 sm:mt-0 sm:justify-self-end">
                   <a
                     href={`https://solscan.io/address/${h.invoice}?cluster=devnet`}
                     target="_blank"
                     rel="noreferrer"
-                    className="hover:text-brand-dark"
+                    className="hover:text-indigo-200 underline-offset-2 hover:underline"
                   >
                     View invoice on explorer
                   </a>

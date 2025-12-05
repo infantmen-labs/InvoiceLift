@@ -10,6 +10,7 @@ const navItems = [
   { to: '/portfolio', label: 'Portfolio' },
   { to: '/mint', label: 'Mint invoice' },
   { to: '/fund', label: 'Fund invoice' },
+  { to: '/docs', label: 'Demo guide' },
   { to: '/admin', label: 'Admin' },
 ]
 
@@ -33,7 +34,9 @@ export function Sidebar({ toggle }: toggleMenu){
   <>
     <aside className={`${toggle ? 'block' : 'hidden'} lg:hidden mt-[72px] flex  w-56 flex-col border-r border-slate-200 bg-slate-900 text-slate-100`}>
       <div className="flex justify-between h-14 items-center border-b border-slate-800 px-4">
-        <div className="text-sm font-cursive font-bold uppercase tracking-wide animate-bounce">InvoiceLift</div>
+        <NavLink to="/" className="text-sm font-cursive font-bold uppercase tracking-wide animate-bounce">
+          InvoiceLift
+        </NavLink>
       </div>
       <nav className="flex-1 px-2 py-4 text-sm">
         <div className="space-y-1">
@@ -86,7 +89,9 @@ export function Sidebar({ toggle }: toggleMenu){
 
     <aside className="lg:flex hidden h-full w-56 flex-col border-r border-slate-200 bg-slate-900 text-slate-100">
       <div className="flex justify-between h-14 items-center border-b border-slate-800 px-4">
-        <div className="text-sm font-cursive font-bold uppercase tracking-wide animate-bounce">InvoiceLift</div>
+        <NavLink to="/" className="text-sm font-cursive font-bold uppercase tracking-wide animate-bounce">
+          InvoiceLift
+        </NavLink>
       </div>
       <nav className="flex-1 px-2 py-4 text-sm">
         <div className="space-y-1">

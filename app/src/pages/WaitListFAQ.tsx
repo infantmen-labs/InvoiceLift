@@ -1,6 +1,5 @@
-import { div } from "framer-motion/client";
-import React, { useState, useEffect } from "react";
-import { motion, number } from "framer-motion";
+import React, { useState } from "react";
+import { motion } from "framer-motion";
 
 type FAQItem = {
   question: string;
@@ -46,19 +45,16 @@ const FAQData: FAQItem[] = [
 
 export default function FAQ() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
-  const [FAQcolor, setFAQcolor] = useState<boolean>(false);
-
-  const FAQColorChange = () => {
-    setFAQcolor(prev => !prev)
-  }
   const toggle = (i: number) => {
     setOpenIndex((prev) => (prev === i ? null : i));
   };
 
+  const hasOpen = openIndex !== null;
+
   return (
     <div className="flex gap-20 flex-col xl:flex-row  items-center p-5">
       <div className="w-auto px-4 py-5 group bg-gradient-to-br from-white/5 to-white/0 backdrop-blur-sm rounded-2xl border border-gray-700/50 hover:border-purple-500/50 transition-all duration-300 hover:transform hover:scale-105 animate-fade-in">
-        <h2 className={`text-2xl md:text-3xl font-bold ${FAQcolor ? 'text-green-500' : 'text-white'} transition-colors duration-300`}>
+        <h2 className={`text-2xl md:text-3xl font-bold ${hasOpen ? 'text-green-500' : 'text-white'} transition-colors duration-300`}>
           <span className="hidden sm:block">Frequently Asked Questions</span>
           <span className="sm:hidden">FAQ</span>
         </h2>
@@ -66,13 +62,6 @@ export default function FAQ() {
         <div className="max-w-[600px] mt-8 rounded-lg shadow-[0_4px_50px_-8px_rgba(128,0,128,0.3)] text-[#1d3557] font-inter">
           {FAQData.map((item, i) => {
             const expanded = openIndex === i;
-
-            useEffect(() => {
-              if (expanded  !== null) {
-                FAQColorChange();
-              }
-            }, [expanded]);
-
             return (
               <div key={i} className="border-b border-gray-200">
                 {/* QUESTION */}

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { TrendingUp, CheckCircle, AlertCircle } from 'lucide-react';
 
+const backend = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:8080';
+
 export default function InvestorForm() {
   const [formData, setFormData] = useState({
     name: '',
@@ -24,11 +26,23 @@ export default function InvestorForm() {
     setStatus('idle');
 
     try {
-      // 👉 Replacing Supabase submission with console.log
-      console.log("Investor interest submitted:", formData);
+      const res = await fetch(`${backend}/api/waitlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          source: 'investor',
+        }),
+      });
 
-      // Optional small delay for UX
-      await new Promise((res) => setTimeout(res, 700));
+      const data = await res.json().catch(() => null);
+      if (!res.ok || (data && data.ok === false)) {
+        const errMsg = data?.error || 'Failed to submit. Please try again.';
+        setStatus('error');
+        setMessage(errMsg);
+        return;
+      }
 
       setStatus('success');
       setMessage("Thank you! We'll be in touch soon.");

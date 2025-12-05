@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { Mail, CheckCircle, AlertCircle } from 'lucide-react';
+import { Mail, CheckCircle, AlertCircle, User } from 'lucide-react';
 
-
-
-
+const backend = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:8080';
 
 export default function WaitlistForm() {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -24,14 +23,23 @@ export default function WaitlistForm() {
     setStatus('idle');
 
     try {
-      // 👉 Simulate "submission" (no more Supabase)
-      console.log("Waitlist form submitted:", { email });
+      const res = await fetch(`${backend}/api/waitlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, source: 'waitlist' }),
+      });
 
-      // Fake slight delay (optional)
-      await new Promise((res) => setTimeout(res, 800));
+      const data = await res.json().catch(() => null);
+      if (!res.ok || (data && data.ok === false)) {
+        const errMsg = data?.error || 'Failed to join waitlist. Please try again.';
+        setStatus('error');
+        setMessage(errMsg);
+        return;
+      }
 
       setStatus('success');
       setMessage("You're on the list! We'll notify you at launch.");
+      setName('');
       setEmail('');
 
     } catch (err) {
@@ -53,22 +61,36 @@ export default function WaitlistForm() {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="relative">
-            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email"
-              className="w-full pl-12 pr-4 py-4 bg-white/5 border border-gray-600/50 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-              disabled={isLoading}
-            />
+          <div className="space-y-3">
+            <div className="relative">
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Enter your name"
+                className="w-full pl-12 pr-4 py-4 bg-white/5 border border-gray-600/50 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email"
+                className="w-full pl-12 pr-4 py-4 bg-white/5 border border-gray-600/50 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                disabled={isLoading}
+              />
+            </div>
           </div>
 
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-4 bg-[#0B172A] hover:bg-[#0B172A]/80 text-white font-semibold rounded-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
+            className="w-full py-4 bg-[#8437EB] hover:bg-[#8437EB]/90 text-white font-semibold rounded-xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
           >
             {isLoading ? 'Joining...' : 'Join Waitlist'}
           </button>

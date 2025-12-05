@@ -5,6 +5,7 @@ import { AnchorProvider, Program, web3, Idl, BN } from '@coral-xyz/anchor'
 import { getAccount, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token'
 import { useSignerMode } from '../state/signerMode'
 import { useToast } from '../components/Toast'
+import { useDevnetGuard } from '../state/devnetGuard'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Select } from '../components/ui/Select'
@@ -96,9 +97,11 @@ export function Invoices() {
   const { show } = useToast()
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
+  const [globalTotalsBase, setGlobalTotalsBase] = useState<{ totalAmountBase: number; totalFundedBase: number } | null>(null)
   const params = useParams<{ id?: string }>()
   const navigate = useNavigate()
   const initialInvoiceId = params.id
+  const { requireDevnetAck } = useDevnetGuard()
 
   function shortAddress(x?: string | null){
     if (!x) return ''
@@ -115,6 +118,7 @@ export function Invoices() {
 
   async function handleRevokeSharesV2(id: number){
     if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before listing or trading.', kind: 'error' }); return }
     const me = walletAdapter.publicKey.toBase58()
     try{
       const r = await fetch(`${backend}/api/listings/${id}/build-revoke-shares`, { method: 'POST', headers: { 'x-wallet': me } })
@@ -127,6 +131,7 @@ export function Invoices() {
 
   async function handleRevokeUsdcV2(id: number){
     if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before listing or trading.', kind: 'error' }); return }
     const me = walletAdapter.publicKey.toBase58()
     try{
       const r = await fetch(`${backend}/api/listings/${id}/build-revoke-usdc`, { method: 'POST', headers: { 'x-wallet': me } })
@@ -139,6 +144,7 @@ export function Invoices() {
 
   async function handleCancelListingOnchainV2(id: number){
     if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before listing or trading.', kind: 'error' }); return }
     const me = walletAdapter.publicKey.toBase58()
     try{
       const r = await fetch(`${backend}/api/listings/${id}/build-cancel-v2-tx`, { method: 'POST', headers: { 'x-wallet': me } })
@@ -152,6 +158,7 @@ export function Invoices() {
 
   async function handleInitListingV2(id: number){
     if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before listing or trading.', kind: 'error' }); return }
     const me = walletAdapter.publicKey.toBase58()
     try{
       setInitV2LoadingId(id)
@@ -174,6 +181,7 @@ export function Invoices() {
 
   async function handleApproveSharesV2(id: number){
     if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before listing or trading.', kind: 'error' }); return }
     const me = walletAdapter.publicKey.toBase58()
     try{
       setApproveSharesLoadingId(id)
@@ -188,6 +196,7 @@ export function Invoices() {
 
   async function handleApproveUsdcV2(id: number){
     if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before listing or trading.', kind: 'error' }); return }
     const me = walletAdapter.publicKey.toBase58()
     const q = Number(fillQtyById[id] || '0')
     if (!Number.isFinite(q) || q <= 0) { show({ text: 'Enter a valid quantity first', kind: 'error' }); return }
@@ -205,6 +214,7 @@ export function Invoices() {
 
   async function handleFulfillListingOnchainV2(id: number){
     if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before listing or trading.', kind: 'error' }); return }
     const me = walletAdapter.publicKey.toBase58()
     const q = Number(fillQtyById[id] || '0')
     if (!Number.isFinite(q) || q <= 0) { show({ text: 'Enter a valid quantity', kind: 'error' }); return }
@@ -278,6 +288,12 @@ export function Invoices() {
   }, [status, walletFilter, page])
 
   const stats = useMemo(() => {
+    if (globalTotalsBase) {
+      const totalAmount = globalTotalsBase.totalAmountBase / 1_000_000
+      const totalFunded = globalTotalsBase.totalFundedBase / 1_000_000
+      const avgFundedPct = totalAmount > 0 ? (totalFunded / totalAmount) * 100 : 0
+      return { totalAmount, totalFunded, avgFundedPct }
+    }
     if (!items.length) return { totalAmount: 0, totalFunded: 0, avgFundedPct: 0 }
     let totalAmount = 0
     let totalFunded = 0
@@ -289,7 +305,7 @@ export function Invoices() {
     }
     const avgFundedPct = totalAmount > 0 ? (totalFunded / totalAmount) * 100 : 0
     return { totalAmount, totalFunded, avgFundedPct }
-  }, [items])
+  }, [items, globalTotalsBase])
 
   const pageCount = totalCount ? Math.ceil(totalCount / PAGE_SIZE) : 0
   const currentPage = pageCount ? Math.min(page, pageCount) : 1
@@ -329,6 +345,21 @@ export function Invoices() {
         setTotalCount(j.pagination.total)
       } else {
         setTotalCount((j.invoices || []).length || 0)
+      }
+      if (j.stats) {
+        const totalAmountBaseRaw =
+          typeof j.stats.totalAmountBase !== 'undefined'
+            ? j.stats.totalAmountBase
+            : j.stats.totalAmount
+        const totalFundedBaseRaw =
+          typeof j.stats.totalFundedBase !== 'undefined'
+            ? j.stats.totalFundedBase
+            : j.stats.totalFunded
+        const totalAmountBase = Number(totalAmountBaseRaw || 0)
+        const totalFundedBase = Number(totalFundedBaseRaw || 0)
+        setGlobalTotalsBase({ totalAmountBase, totalFundedBase })
+      } else {
+        setGlobalTotalsBase(null)
       }
     }finally{
       setLoading(false)
@@ -453,6 +484,7 @@ export function Invoices() {
 
   async function handleDepositListingOnchain(id: number){
     if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before listing or trading.', kind: 'error' }); return }
     const me = walletAdapter.publicKey.toBase58()
     try{
       setDepositLoadingId(id)
@@ -475,6 +507,7 @@ export function Invoices() {
 
   async function handleFulfillListingOnchain(id: number){
     if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before listing or trading.', kind: 'error' }); return }
     const me = walletAdapter.publicKey.toBase58()
     const q = Number(fillQtyById[id] || '0')
     if (!Number.isFinite(q) || q <= 0) { show({ text: 'Enter a valid quantity', kind: 'error' }); return }
@@ -504,6 +537,7 @@ export function Invoices() {
 
   async function handleCancelListingOnchain(id: number){
     if (!walletAdapter.publicKey) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before listing or trading.', kind: 'error' }); return }
     const me = walletAdapter.publicKey.toBase58()
     try{
       const r = await fetch(`${backend}/api/listings/${id}/build-cancel-tx`, { method: 'POST', headers: { 'x-wallet': me } })
@@ -519,6 +553,13 @@ export function Invoices() {
   async function handleInitSharesWithWallet(){
     if (!selected) return
     if (!walletAdapter.publicKey) { setFxError('Connect wallet first'); return }
+    if (requireDevnetAck) { setFxError('This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before initializing shares.'); return }
+    const seller = (detail && (detail as any).seller) as string | undefined
+    const me = walletAdapter.publicKey.toBase58()
+    if (!seller || me !== seller) {
+      setFxError('Only the seller of this invoice can initialize shares.')
+      return
+    }
     setFxError(null)
     setInitWalletLoading(true)
     try{
@@ -557,6 +598,7 @@ export function Invoices() {
   async function handleFundFractionWithWallet(){
     if (!selected) return
     if (!walletAdapter.publicKey) { setFxError('Connect wallet first'); return }
+    if (requireDevnetAck) { setFxError('This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before funding.'); return }
     const n = Number(fracAmount)
     if (!Number.isFinite(n) || n <= 0) { setFxError('Enter a valid amount'); return }
     const base = Math.round(n * 1_000_000)
@@ -752,7 +794,7 @@ export function Invoices() {
 
           <div className='cardInvoice2'>
             <div className='bgInvoice2'>
-              <StatCard label="Total invoices" value={items.length.toString()} />
+              <StatCard label="Total invoices" value={totalCount.toString()} />
             </div>
             <div className="blobInvoice2"></div>
           </div>
@@ -976,10 +1018,28 @@ export function Invoices() {
                                 Invoice
                               </div>
                               <div
-                                className="break-all font-mono text-xs text-slate-800"
+                                className="flex items-center gap-2 break-all font-mono text-xs text-slate-800"
                                 title={selected || undefined}
                               >
-                                {shortAddress(selected)}
+                                <span>{shortAddress(selected)}</span>
+                                <button
+                                  type="button"
+                                  className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 hover:bg-slate-200"
+                                  onClick={() => {
+                                    if (!selected) return
+                                    if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+                                      navigator.clipboard.writeText(selected)
+                                        .then(() => {
+                                          show({ text: 'Invoice address copied', kind: 'success' })
+                                        })
+                                        .catch(() => {
+                                          show({ text: 'Failed to copy invoice address', kind: 'error' })
+                                        })
+                                    }
+                                  }}
+                                >
+                                  Copy
+                                </button>
                               </div>
                               <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600 italic font-serif">
                                 Status
@@ -1381,14 +1441,28 @@ export function Invoices() {
                                           {initLoading ? 'Initializing…' : 'Init shares (Backend)'}
                                         </Button>
                                       ) : (
-                                        <Button
-                                          variant="primary"
-                                          size="sm"
-                                          onClick={handleInitSharesWithWallet}
-                                          disabled={initWalletLoading || !walletAdapter.publicKey}
-                                        >
-                                          {initWalletLoading ? 'Initializing…' : 'Init shares (Wallet)'}
-                                        </Button>
+                                        (() => {
+                                          const me = walletAdapter.publicKey?.toBase58()
+                                          const seller = (detail && (detail as any).seller) as string | undefined
+                                          const isSeller = !!me && !!seller && me === seller
+                                          return (
+                                            <>
+                                              <Button
+                                                variant="primary"
+                                                size="sm"
+                                                onClick={handleInitSharesWithWallet}
+                                                disabled={initWalletLoading || !walletAdapter.publicKey || !isSeller}
+                                              >
+                                                {initWalletLoading ? 'Initializing…' : 'Init shares (Wallet)'}
+                                              </Button>
+                                              {!isSeller && (
+                                                <span className="text-[11px] text-slate-500">
+                                                  Only the seller of this invoice can initialize shares.
+                                                </span>
+                                              )}
+                                            </>
+                                          )
+                                        })()
                                       )}
                                       {fxError ? <span className="text-[11px] text-red-600">{fxError}</span> : null}
                                     </>

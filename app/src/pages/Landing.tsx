@@ -166,14 +166,12 @@ export function Landing(){
                 >
                   Launch Demo
                 </Link>
-                <a
-                  href="https://github.com/Sektorial12/InvoiceLift"
-                  target="_blank"
-                  rel="noreferrer"
+                <Link
+                  to="/docs"
                   className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 font-medium text-slate-200 hover:border-slate-500"
                 >
-                  View Docs & Code
-                </a>
+                  View Docs
+                </Link>
               </div>
             </motion.div>
 

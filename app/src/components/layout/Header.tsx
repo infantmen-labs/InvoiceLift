@@ -2,6 +2,7 @@ import { useState }  from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui'
 import { useSignerMode } from '../../state/signerMode'
+import { DevnetHint } from '../DevnetHint'
 
 const TITLE_MAP: Record<string, string> = {
   '/': 'Invoices',
@@ -77,17 +78,17 @@ export function Header({ flipToggle }: toggleMenu){
             >
               <button className='button animate-UpDown'>Mint invoice</button>
             </Link>
+            <Link
+              to="/docs"
+              className="hidden lg:inline-flex items-center text-[11px] text-slate-200 hover:text-white underline-offset-2 hover:underline"
+            >
+              Demo guide
+            </Link>
             <SignerToggle />
           </div>
-          <div className="">
-            <WalletMultiButton>
-              <button className="btn">
-                <div className='flex gap-2'>
-                  <div className='hidden sm:block'>Select</div> 
-                  <div className=''>Wallet</div>
-                </div> 
-              </button>
-            </WalletMultiButton>
+          <div className="flex items-center gap-2">
+            <WalletMultiButton className="btn" />
+            <DevnetHint />
           </div>
         </div>
       </div>

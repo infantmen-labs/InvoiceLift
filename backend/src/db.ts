@@ -118,6 +118,16 @@ export function initDb(customPath?: string){
       created_at INTEGER,
       updated_at INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS waitlist_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      email TEXT,
+      source TEXT,
+      created_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_waitlist_email ON waitlist_entries(email);
+    CREATE INDEX IF NOT EXISTS idx_waitlist_created ON waitlist_entries(created_at);
   `)
   // Backfill migration: add shares_mint if missing
   try {
@@ -270,6 +280,21 @@ export function countInvoices(opts: { status?: string; wallet?: string }): numbe
   if (where.length) sql += ' WHERE ' + where.join(' AND ')
   const row = db.prepare(sql).get(...params) as { c?: number } | undefined
   return row && typeof row.c === 'number' ? row.c : 0
+}
+
+export function getInvoiceTotals(opts: { status?: string; wallet?: string }): { totalAmount: number; totalFunded: number } {
+  const db = getDb()
+  const { status, wallet } = opts
+  let sql = 'SELECT SUM(CAST(amount AS INTEGER)) AS totalAmount, SUM(CAST(funded_amount AS INTEGER)) AS totalFunded FROM invoices'
+  const params: any[] = []
+  const where: string[] = []
+  if (status) { where.push('status = ?'); params.push(status) }
+  if (wallet) { where.push('(seller = ? OR investor = ?)'); params.push(wallet, wallet) }
+  if (where.length) sql += ' WHERE ' + where.join(' AND ')
+  const row = db.prepare(sql).get(...params) as { totalAmount?: number | string | null; totalFunded?: number | string | null } | undefined
+  const totalAmount = row && row.totalAmount != null ? Number(row.totalAmount) : 0
+  const totalFunded = row && row.totalFunded != null ? Number(row.totalFunded) : 0
+  return { totalAmount, totalFunded }
 }
 
 export function hasIdempotencyKey(idemKey: string){
@@ -579,4 +604,46 @@ export function getCreditScore(invoicePk: string): CreditScore | null {
   const db = getDb()
   const row = db.prepare('SELECT * FROM credit_scores WHERE invoice_pk = ?').get(invoicePk)
   return mapScoreRow(row)
+}
+
+export type WaitlistEntry = {
+  id: number
+  name: string | null
+  email: string
+  source: string | null
+  createdAt: number
+}
+
+function mapWaitlistRow(row: any): WaitlistEntry | null {
+  if (!row) return null
+  return {
+    id: row.id,
+    name: row.name || null,
+    email: row.email,
+    source: row.source || null,
+    createdAt: row.created_at,
+  }
+}
+
+export function insertWaitlistEntry(input: { name?: string | null; email: string; source?: string | null }): WaitlistEntry {
+  const db = getDb()
+  const ts = nowMs()
+  const emailNorm = String(input.email || '').trim().toLowerCase()
+  if (!emailNorm) {
+    throw new Error('email required')
+  }
+  const name = input.name ? String(input.name).trim() : null
+  const source = input.source ? String(input.source).trim() : null
+  const info = db.prepare('INSERT INTO waitlist_entries (name, email, source, created_at) VALUES (?,?,?,?)')
+    .run(name, emailNorm, source, ts)
+  const id = Number(info.lastInsertRowid)
+  const row = db.prepare('SELECT * FROM waitlist_entries WHERE id = ?').get(id)
+  return mapWaitlistRow(row) as WaitlistEntry
+}
+
+export function listWaitlistEntries(limit: number = 1000): WaitlistEntry[] {
+  const db = getDb()
+  const lim = Number.isFinite(limit) ? Math.max(1, Math.min(Number(limit), 5000)) : 1000
+  const rows = db.prepare('SELECT * FROM waitlist_entries ORDER BY created_at DESC LIMIT ?').all(lim)
+  return (rows || []).map(mapWaitlistRow).filter(Boolean) as WaitlistEntry[]
 }

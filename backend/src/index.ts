@@ -11,7 +11,7 @@ import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, getMint, createApproveChec
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { resolve } from 'path';
-import { initDb, upsertInvoiceFromChain, saveTxLog, getInvoiceRow, listInvoices, countInvoices, hasIdempotencyKey, recordWebhookEvent, markWebhookProcessed, getPositionsCache, setPositionsCache, clearPositionsCache, getPositionsHistory, listInvoicesWithSharesMint, createListing, getListing, listListingsByInvoice, listListingsBySeller, cancelListing, fillListingPartial, listOpenListings, upsertKycRecord, getKycRecord, insertDocHash, listDocHashes, upsertCreditScore, getCreditScore } from './db';
+import { initDb, upsertInvoiceFromChain, saveTxLog, getInvoiceRow, listInvoices, countInvoices, getInvoiceTotals, hasIdempotencyKey, recordWebhookEvent, markWebhookProcessed, getPositionsCache, setPositionsCache, clearPositionsCache, getPositionsHistory, listInvoicesWithSharesMint, createListing, getListing, listListingsByInvoice, listListingsBySeller, cancelListing, fillListingPartial, listOpenListings, upsertKycRecord, getKycRecord, insertDocHash, listDocHashes, upsertCreditScore, getCreditScore, insertWaitlistEntry, listWaitlistEntries } from './db';
 import { logger } from './logger';
 import { validateConfig } from './config';
 import { KycSchema, DocSchema, ScoreSchema, WebhookPaymentSchema, ListingCreateSchema, ListingCancelSchema, ListingFillSchema } from './validation';
@@ -40,6 +40,8 @@ function isAdminReq(req: Request){
   const w = req.header('x-admin-wallet') || '';
   return !!w && ADMIN_WALLETS.includes(w);
 }
+
+const WAITLIST_ADMIN_KEY = String(process.env.WAITLIST_ADMIN_KEY || '').trim();
 
 const LISTINGS_REQUIRE_SIG = process.env.LISTINGS_REQUIRE_SIG !== 'false';
 const LISTING_SIG_TOL_SEC = Number(process.env.LISTING_SIG_TOL_SEC ?? '300');
@@ -125,6 +127,40 @@ async function computeInvoicePositions(invoicePkStr: string){
 
 app.get('/healthz', (_req: Request, res: Response) => {
   res.status(200).json({ ok: true });
+});
+
+app.post('/api/waitlist', async (req: Request, res: Response) => {
+  try {
+    const { name, email, source } = req.body as { name?: string; email?: string; source?: string };
+    const emailRaw = String(email || '').trim();
+    if (!emailRaw || !emailRaw.includes('@')) {
+      return res.status(400).json({ ok: false, error: 'invalid email' });
+    }
+    const entry = insertWaitlistEntry({
+      name: name ? String(name).trim() : null,
+      email: emailRaw,
+      source: source ? String(source).trim() : null,
+    });
+    res.status(200).json({ ok: true, entry });
+  } catch (e: any) {
+    try { logger.error({ err: e?.message || String(e) }, 'waitlist insert failed'); } catch {}
+    res.status(500).json({ ok: false, error: e?.message || 'failed to join waitlist' });
+  }
+});
+
+app.get('/api/waitlist', async (req: Request, res: Response) => {
+  try {
+    const key = String(req.query.key || '');
+    if (!WAITLIST_ADMIN_KEY || key !== WAITLIST_ADMIN_KEY) {
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    }
+    let limit = Number(req.query.limit ?? '1000');
+    if (!Number.isFinite(limit) || limit <= 0) limit = 1000;
+    const entries = listWaitlistEntries(limit);
+    res.status(200).json({ ok: true, entries });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || 'failed to load waitlist' });
+  }
 });
 
 app.get('/api/listings/open', async (_req: Request, res: Response) => {
@@ -803,11 +839,13 @@ app.get('/api/invoices', async (req: Request, res: Response) => {
 
     const total = countInvoices({ status, wallet });
     const rows = listInvoices({ status, wallet, limit: pageSize, offset });
+    const totals = getInvoiceTotals({ status, wallet });
     const pageCount = total > 0 ? Math.ceil(total / pageSize) : 0;
 
     res.status(200).json({
       ok: true,
       invoices: rows,
+      stats: totals,
       pagination: {
         page,
         pageSize,
@@ -911,7 +949,7 @@ app.post('/api/faucet/usdc', async (req: Request, res: Response) => {
     }
     const { recipient, amount } = req.body as { recipient: string; amount?: string };
     if (!recipient) throw new Error('recipient required');
-    const mintAmount = amount ? new BN(String(amount)) : new BN('10000000'); // default 10 USDC
+    const mintAmount = amount ? new BN(String(amount)) : new BN('100000000'); // default 100 USDC
     const program = getProgram();
     const usdcMintStr = process.env.USDC_MINT;
     if (!usdcMintStr) throw new Error('USDC_MINT not set');
@@ -939,7 +977,7 @@ app.post('/api/faucet/usdc', async (req: Request, res: Response) => {
       BigInt(mintAmount.toString())
     );
     
-    res.status(200).json({ ok: true, tx: sig, ata: recipientAta.address.toBase58() });
+    res.status(200).json({ ok: true, tx: sig, ata: recipientAta.address.toBase58(), amount: mintAmount.toString() });
   } catch (e: any) {
     res.status(400).json({ ok: false, error: e?.message || String(e) });
   }

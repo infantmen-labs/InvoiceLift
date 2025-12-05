@@ -5,6 +5,7 @@ import { getAssociatedTokenAddress } from '@solana/spl-token'
 import { useToast } from '../components/Toast'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
+import { useDevnetGuard } from '../state/devnetGuard'
 
 const backend = (import.meta as any).env.VITE_BACKEND_URL || 'http://localhost:8080'
 const PAGE_SIZE = 10
@@ -15,9 +16,11 @@ export function Marketplace(){
   const wallet = useWallet()
   const { connection } = useConnection()
   const { show } = useToast()
+  const { requireDevnetAck } = useDevnetGuard()
   const walletStr = useMemo(() => wallet.publicKey?.toBase58() || '', [wallet.publicKey])
   const [items, setItems] = useState<Listing[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [mineOnly, setMineOnly] = useState(false)
   const [invoiceFilter, setInvoiceFilter] = useState('')
   const [fillQtyById, setFillQtyById] = useState<Record<number, string>>({})
@@ -37,8 +40,24 @@ export function Marketplace(){
     return btoa(bin)
   }
 
+  function friendlyError(msg: string){
+    const m = (msg || '').toString()
+    const lower = m.toLowerCase()
+    if (lower.includes('failed to fetch') || lower.includes('networkerror')){
+      return 'Could not reach the InvoiceLift backend. Make sure the backend server is running and reachable from this browser.'
+    }
+    if (m.includes('429')){
+      return 'The RPC or indexer is currently rate-limited. Wait a few seconds, then press Refresh.'
+    }
+    if (m.includes('getProgramAccounts is not available on the Free tier')){
+      return 'The configured RPC provider free tier is blocking indexer queries. Use a different or upgraded RPC URL to see marketplace data.'
+    }
+    return m
+  }
+
   async function handleRevokeUsdcV2(id: number){
     if (!walletStr) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before trading.', kind: 'error' }); return }
     try{
       const r = await fetch(`${backend}/api/listings/${id}/build-revoke-usdc`, { method: 'POST', headers: { 'x-wallet': walletStr } })
       const j = await r.json()
@@ -51,6 +70,7 @@ export function Marketplace(){
 
   async function handleRevokeSharesV2(id: number){
     if (!walletStr) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click I\'m on devnet next to the wallet button before trading.', kind: 'error' }); return }
     try{
       const r = await fetch(`${backend}/api/listings/${id}/build-revoke-shares`, { method: 'POST', headers: { 'x-wallet': walletStr } })
       const j = await r.json()
@@ -63,6 +83,7 @@ export function Marketplace(){
 
   async function handleCancelOnchainV2(id: number){
     if (!walletStr) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click I\'m on devnet next to the wallet button before trading.', kind: 'error' }); return }
     try{
       const r = await fetch(`${backend}/api/listings/${id}/build-cancel-v2-tx`, { method: 'POST', headers: { 'x-wallet': walletStr } })
       const j = await r.json()
@@ -89,6 +110,7 @@ export function Marketplace(){
 
   async function handleInitListingV2(id: number){
     if (!walletStr) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click I\'m on devnet next to the wallet button before trading.', kind: 'error' }); return }
     try{
       setInitV2LoadingId(id)
       const r = await fetch(`${backend}/api/listings/${id}/build-create-v2-tx`, { method: 'POST', headers: { 'x-wallet': walletStr } })
@@ -103,6 +125,7 @@ export function Marketplace(){
 
   async function handleApproveSharesV2(id: number){
     if (!walletStr) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click I\'m on devnet next to the wallet button before trading.', kind: 'error' }); return }
     try{
       setApproveSharesLoadingId(id)
       const r = await fetch(`${backend}/api/listings/${id}/build-approve-shares`, { method: 'POST', headers: { 'x-wallet': walletStr } })
@@ -116,6 +139,7 @@ export function Marketplace(){
 
   async function handleApproveUsdcV2(id: number){
     if (!walletStr) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click I\'m on devnet next to the wallet button before trading.', kind: 'error' }); return }
     const q = Number(fillQtyById[id] || '0')
     if (!Number.isFinite(q) || q <= 0) { show({ text: 'Enter a valid quantity first', kind: 'error' }); return }
     const qtyBase = Math.round(q * 1_000_000)
@@ -132,6 +156,7 @@ export function Marketplace(){
 
   async function handleFulfillOnchainV2(id: number){
     if (!walletStr) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click I\'m on devnet next to the wallet button before trading.', kind: 'error' }); return }
     const q = Number(fillQtyById[id] || '0')
     if (!Number.isFinite(q) || q <= 0) { show({ text: 'Enter a valid quantity', kind: 'error' }); return }
     const qtyBase = Math.round(q * 1_000_000)
@@ -165,6 +190,7 @@ export function Marketplace(){
 
   async function load(){
     setLoading(true)
+    setError(null)
     try{
       let url = ''
       if (mineOnly && walletStr) url = `${backend}/api/listings?seller=${walletStr}`
@@ -174,7 +200,13 @@ export function Marketplace(){
       if (!j.ok) throw new Error(j.error || 'load failed')
       const rows: Listing[] = (j.listings || []).map((x: any) => ({ id: x.id, invoicePk: x.invoicePk || x.invoice_pk || '', seller: x.seller, price: String(x.price), qty: String(x.qty), remainingQty: String(x.remainingQty || x.remaining_qty || '0'), status: String(x.status), createdAt: Number(x.createdAt || x.created_at || 0), escrowDeposited: !!x.escrowDeposited, onChain: !!x.onChain }))
       setItems(rows)
-    }catch(e: any){ show({ text: e?.message || String(e), kind: 'error' }) }
+    }catch(e: any){
+      const msg = e?.message || String(e)
+      const friendly = friendlyError(msg)
+      setError(friendly)
+      show({ text: friendly, kind: 'error' })
+      setItems([])
+    }
     finally { setLoading(false) }
   }
 
@@ -258,6 +290,7 @@ export function Marketplace(){
 
   async function handleDepositOnchain(id: number){
     if (!walletStr) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click I\'m on devnet next to the wallet button before trading.', kind: 'error' }); return }
     try{
       setDepositLoadingId(id)
       const r = await fetch(`${backend}/api/listings/${id}/build-create-tx`, { method: 'POST', headers: { 'x-wallet': walletStr } })
@@ -276,6 +309,7 @@ export function Marketplace(){
 
   async function handleFulfillOnchain(id: number){
     if (!walletStr) { show({ text: 'Connect wallet first', kind: 'error' }); return }
+    if (requireDevnetAck) { show({ text: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click I\'m on devnet next to the wallet button before trading.', kind: 'error' }); return }
     const q = Number(fillQtyById[id] || '0')
     if (!Number.isFinite(q) || q <= 0) { show({ text: 'Enter a valid quantity', kind: 'error' }); return }
     const qtyBase = Math.round(q * 1_000_000)
@@ -376,11 +410,27 @@ export function Marketplace(){
           </Button>
         </div>
       </div>
-      {filtered.length === 0 ? (
-        <div className="">
-          <div className="mt-2 rounded-lg border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
-            No listings
-          </div>
+      {error && (
+        <div className="mt-2 rounded-md border border-amber-500/40 bg-amber-950/40 px-3 py-2 text-xs text-amber-100">
+          {error}
+        </div>
+      )}
+      {loading && !items.length ? (
+        <div className="mt-3 space-y-2">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-16 w-full max-w-3xl rounded-xl border border-slate-800/40 bg-slate-900/30 animate-pulse"
+            />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="mt-2 rounded-lg border border-slate-800/60 bg-slate-900/40 px-4 py-4 text-sm text-slate-300">
+          No listings found.
+          <span className="block text-xs text-slate-400 mt-1">
+            If you just created a listing or funded an invoice, wait a few seconds and click <span className="font-medium">Refresh</span>.
+            You can also adjust the filters or uncheck <span className="font-medium">My listings only</span>.
+          </span>
         </div>
       ) : (
         <div className="mt-3 grid gap-2">
@@ -432,155 +482,161 @@ export function Marketplace(){
                       {l.status}
                     </span>
                   </div>
-                  {isMine && (
-                    <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2">
-                      <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
-                        <span>Seller actions</span>
-                        <span className="text-slate-400">{l.status}</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {canCancel && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleCancel(l.id)}
-                          >
-                            Cancel
-                          </Button>
-                        )}
-                        {!allowanceEnabled && canCancel && !depositedIds[l.id] && !l.escrowDeposited && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => handleDepositOnchain(l.id)}
-                            loading={depositLoadingId === l.id}
-                          >
-                            Deposit shares
-                          </Button>
-                        )}
-                        {allowanceEnabled && l.status === 'Open' && !l.onChain && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => handleInitListingV2(l.id)}
-                            loading={initV2LoadingId === l.id}
-                          >
-                            Init on-chain (V2)
-                          </Button>
-                        )}
-                        {allowanceEnabled && l.status === 'Open' && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleApproveSharesV2(l.id)}
-                              loading={approveSharesLoadingId === l.id}
-                            >
-                              Approve shares
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRevokeSharesV2(l.id)}
-                            >
-                              Revoke shares
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleCancelOnchainV2(l.id)}
-                            >
-                              Cancel on-chain (V2)
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                      {allowanceEnabled && (
-                        <div className="mt-1 text-[11px] text-slate-500">
-                          Shares allowance:{' '}
-                          {allowances[l.id]?.sellerShares?.delegate
-                            ? short(allowances[l.id]?.sellerShares?.delegate)
-                            : '—'}{' '}
-                          {allowances[l.id]?.sellerShares?.amount
-                            ? `(${n6(allowances[l.id]?.sellerShares?.amount)})`
-                            : ''}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                </div>
 
-                  {canFill ? (
-                    <div
+                {openItems[l.id] && (
+                  <div
                     onClick={(e) => e.stopPropagation()}
-                    className={`${openItems[l.id] ? 'block' : 'hidden'} z-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 cursor-default`}>
-                      <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
-                        <span>Buyer actions</span>
-                        <span className="text-slate-400">You pay in USDC</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="w-28">
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.000001"
-                            title="Quantity to buy in shares (6 decimals)."
-                            value={fillQtyById[l.id] || ''}
-                            onChange={(e) => setFillQtyById((m) => ({ ...m, [l.id]: e.target.value }))}
-                            placeholder="Qty (shares)"
-                            className="h-8 text-[11px] px-[5px]"
-                          />
+                    className={`col-span-full mt-2 grid gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-700 ${isMine && canFill ? 'sm:grid-cols-2' : 'sm:grid-cols-1'}`}
+                  >
+                    {isMine && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-[11px] font-medium text-slate-500">
+                          <span>Seller actions</span>
+                          <span className="text-slate-400">{l.status}</span>
                         </div>
-                        {allowanceEnabled ? (
-                          <>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {canCancel && (
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleApproveUsdcV2(l.id)}
-                              loading={approveUsdcLoadingId === l.id}
+                              onClick={() => handleCancel(l.id)}
                             >
-                              Approve USDC
+                              Cancel
                             </Button>
+                          )}
+                          {!allowanceEnabled && canCancel && !depositedIds[l.id] && !l.escrowDeposited && (
                             <Button
-                              variant="ghost"
+                              variant="secondary"
                               size="sm"
-                              onClick={() => handleRevokeUsdcV2(l.id)}
+                              onClick={() => handleDepositOnchain(l.id)}
+                              loading={depositLoadingId === l.id}
                             >
-                              Revoke USDC
+                              Deposit shares
                             </Button>
+                          )}
+                          {allowanceEnabled && l.status === 'Open' && !l.onChain && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => handleInitListingV2(l.id)}
+                              loading={initV2LoadingId === l.id}
+                            >
+                              Init on-chain (V2)
+                            </Button>
+                          )}
+                          {allowanceEnabled && l.status === 'Open' && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleApproveSharesV2(l.id)}
+                                loading={approveSharesLoadingId === l.id}
+                              >
+                                Approve shares
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRevokeSharesV2(l.id)}
+                              >
+                                Revoke shares
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleCancelOnchainV2(l.id)}
+                              >
+                                Cancel on-chain (V2)
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                        {allowanceEnabled && (
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            Shares allowance:{' '}
+                            {allowances[l.id]?.sellerShares?.delegate
+                              ? short(allowances[l.id]?.sellerShares?.delegate)
+                              : '—'}{' '}
+                            {allowances[l.id]?.sellerShares?.amount
+                              ? `(${n6(allowances[l.id]?.sellerShares?.amount)})`
+                              : ''}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {canFill && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-[11px] font-medium text-slate-500">
+                          <span>Buyer actions</span>
+                          <span className="text-slate-400">You pay in USDC</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="w-full sm:w-32 md:w-40">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.000001"
+                              title="Quantity to buy in shares (6 decimals)."
+                              value={fillQtyById[l.id] || ''}
+                              onChange={(e) => setFillQtyById((m) => ({ ...m, [l.id]: e.target.value }))}
+                              placeholder="Qty (shares)"
+                              className="h-8 px-[5px] text-[11px]"
+                            />
+                          </div>
+                          {allowanceEnabled ? (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleApproveUsdcV2(l.id)}
+                                loading={approveUsdcLoadingId === l.id}
+                              >
+                                Approve USDC
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRevokeUsdcV2(l.id)}
+                              >
+                                Revoke USDC
+                              </Button>
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => handleFulfillOnchainV2(l.id)}
+                                loading={fillLoadingId === l.id}
+                              >
+                                Fill on-chain (V2)
+                              </Button>
+                            </>
+                          ) : (
                             <Button
                               variant="primary"
                               size="sm"
-                              onClick={() => handleFulfillOnchainV2(l.id)}
+                              onClick={() => handleFulfillOnchain(l.id)}
                               loading={fillLoadingId === l.id}
                             >
-                              Fill on-chain (V2)
+                              Fill on-chain
                             </Button>
-                          </>
-                        ) : (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => handleFulfillOnchain(l.id)}
-                            loading={fillLoadingId === l.id}
-                          >
-                            Fill on-chain
-                          </Button>
+                          )}
+                        </div>
+                        {allowanceEnabled && (
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            USDC allowance:{' '}
+                            {allowances[l.id]?.buyerUsdc?.delegate
+                              ? short(allowances[l.id]?.buyerUsdc?.delegate)
+                              : '—'}{' '}
+                            {allowances[l.id]?.buyerUsdc?.amount
+                              ? `(${n6(allowances[l.id]?.buyerUsdc?.amount)})`
+                              : ''}
+                          </div>
                         )}
                       </div>
-                      {allowanceEnabled && (
-                        <div className="mt-1 text-[11px] text-slate-500">
-                          USDC allowance:{' '}
-                          {allowances[l.id]?.buyerUsdc?.delegate
-                            ? short(allowances[l.id]?.buyerUsdc?.delegate)
-                            : '—'}{' '}
-                          {allowances[l.id]?.buyerUsdc?.amount
-                            ? `(${n6(allowances[l.id]?.buyerUsdc?.amount)})`
-                            : ''}
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}

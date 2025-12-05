@@ -47,15 +47,18 @@ This document provides a detailed test plan for the allowance-based marketplace 
 1. Navigate to "Mint Invoice" page
 2. Fill form:
    - Metadata Hash: `test-v2-marketplace-001`
-   - Amount: `5000000` (5 USDC, 6 decimals)
+   - Amount: `5.0` (5 USDC; UI converts to `5_000_000` base units, 6 decimals)
    - Due Date: future timestamp
 3. Click "Mint Invoice (Wallet)"
 4. Sign transaction
-5. **Verify**: Copy invoice public key from success toast/explorer link
+5. **Verify**: After mint + escrow succeed, the UI automatically opens `/invoice/<INVOICE_PUBKEY>`.
+   Copy the invoice public key from the invoice summary or from the success toast/explorer link.
 
 **Expected Result:**
 - Transaction confirmed on devnet
 - Invoice visible in Invoices list with status "Open"
+ - In the Invoices page, the top stat cards show **global** totals (count, total amount, avg funded %)
+   for all invoices matching the current filters, not just the current table page.
 
 #### 1.2 Initialize Shares Mint
 
@@ -68,6 +71,9 @@ This document provides a detailed test plan for the allowance-based marketplace 
    - Invoice detail shows shares mint address
    - Shares mint is not the default pubkey (11111...)
 
+> **UI note:** `Init shares (Wallet)` is only enabled when the connected wallet matches the
+> invoice `seller`. Other wallets see the button disabled with helper text.
+
 **Expected Result:**
 - `shares_mint` field populated on invoice account
 - Seller has 0 shares initially
@@ -75,7 +81,7 @@ This document provides a detailed test plan for the allowance-based marketplace 
 #### 1.3 Fund Invoice Fractionally (Seller Gets Shares)
 
 **Via Frontend:**
-1. In invoice detail, enter amount: `5000000` (5 USDC worth of shares)
+1. In invoice detail, enter amount: `5.0` (5 USDC worth of shares; UI converts to `5_000_000` base units)
 2. Click "Fund Fraction (Wallet)"
 3. Sign transaction (USDC transfer + shares mint)
 4. **Verify**:
@@ -268,7 +274,9 @@ market_authority = findProgramAddressSync(["market", listing_pda], program_id)
 
 **Preparation:**
 - Ensure buyer wallet has sufficient USDC
-- If not, use faucet: `POST /api/faucet/usdc` with buyer wallet (if `FAUCET_ENABLED=true`)
+- If not, use faucet: `POST /api/faucet/usdc` with buyer wallet (if `FAUCET_ENABLED=true`).
+  The default faucet amount is **100 USDC** (`100_000_000` base units) and is also exposed via the
+  "Request devnet USDC" button on the **Fund invoice** page.
 
 **Via Frontend (Marketplace page or invoice listings):**
 1. Switch to buyer wallet in wallet adapter
@@ -401,6 +409,8 @@ curl "http://localhost:8080/api/portfolio/<BUYER_WALLET>"
 - Navigate to Invoices page
 - Open invoice detail
 - Positions section shows buyer with 1.5 shares
+ - Alternatively, open the **Portfolio** page and click the invoice ID in the buyer's holdings to
+   navigate directly to the same invoice detail view.
 
 #### 7.3 Check Seller Balances
 

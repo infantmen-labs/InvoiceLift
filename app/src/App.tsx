@@ -10,7 +10,9 @@ import { SignerModeProvider } from './state/signerMode';
 import { ToastProvider } from './components/Toast';
 import { MainLayout } from './components/layout/MainLayout';
 import { Landing } from './pages/Landing';
-import { WaitListPage } from './pages/WaitListPage'
+import { WaitListPage } from './pages/WaitListPage';
+import { DocsPage } from './pages/DocsPage';
+import { DevnetGuardProvider } from './state/devnetGuard';
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
   constructor(props: any) {
@@ -44,11 +46,14 @@ export default function App(){
     <ErrorBoundary>
       <ToastProvider>
         <SignerModeProvider>
+          <DevnetGuardProvider>
           <Routes>
             {/* Public landing page */}
             <Route path="/" element={<WaitListPage />} />
 
             <Route path="/try-demo" element={<Landing />} />
+
+            <Route path="/docs" element={<DocsPage />} />
 
             {/* App routes wrapped in MainLayout */}
             <Route
@@ -67,6 +72,7 @@ export default function App(){
               <Route path="/fund" element={<FundInvoice />} />
             </Route>
           </Routes>
+          </DevnetGuardProvider>
         </SignerModeProvider>
       </ToastProvider>
     </ErrorBoundary>

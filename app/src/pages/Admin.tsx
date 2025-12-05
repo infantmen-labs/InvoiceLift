@@ -14,6 +14,11 @@ export function Admin(){
   const [kycRead, setKycRead] = useState<any | null>(null)
   const [docCountHint, setDocCountHint] = useState<string>('')
   const [scoreRead, setScoreRead] = useState<any | null>(null)
+  const [waitlistKey, setWaitlistKey] = useState('')
+  const [waitlistLimit, setWaitlistLimit] = useState('100')
+  const [waitlistLoading, setWaitlistLoading] = useState(false)
+  const [waitlistError, setWaitlistError] = useState<string | null>(null)
+  const [waitlistEntries, setWaitlistEntries] = useState<Array<{ id: number; name: string | null; email: string; source: string | null; createdAt: number }>>([])
 
   async function post(path: string, body: any){
     const r = await fetch(`${backend}${path}`, {
@@ -44,6 +49,40 @@ export function Admin(){
         </Card>
       </div>
     )
+  }
+
+  function fmtTs(ts: number){
+    try{ return new Date(ts).toLocaleString() }catch{ return String(ts) }
+  }
+
+  async function loadWaitlist(){
+    setWaitlistLoading(true)
+    setWaitlistError(null)
+    try{
+      const key = (waitlistKey || '').trim()
+      if (!key){
+        setWaitlistError('Admin key is required. Use the WAITLIST_ADMIN_KEY configured on the backend.')
+        setWaitlistLoading(false)
+        return
+      }
+      const limRaw = (waitlistLimit || '').trim() || '100'
+      const url = `${backend}/api/waitlist?key=${encodeURIComponent(key)}&limit=${encodeURIComponent(limRaw)}`
+      const r = await fetch(url)
+      const j = await r.json()
+      if (!j.ok){
+        if (r.status === 403){
+          throw new Error('Forbidden: admin key does not match WAITLIST_ADMIN_KEY on the server.')
+        }
+        throw new Error(j.error || 'failed to load waitlist')
+      }
+      setWaitlistEntries(Array.isArray(j.entries) ? j.entries : [])
+    }catch(e: any){
+      const msg = e?.message || String(e)
+      setWaitlistError(msg)
+      setWaitlistEntries([])
+    }finally{
+      setWaitlistLoading(false)
+    }
   }
 
   return (
@@ -201,6 +240,74 @@ export function Admin(){
           </CardBody>
         </Card>
       </div>
+
+      <Card className="bg-white">
+        <CardHeader>
+          <CardTitle>Waitlist entries (debug)</CardTitle>
+        </CardHeader>
+        <CardBody className="space-y-3 text-sm">
+          <p className="text-xs text-slate-500">
+            Devnet-only viewer for waitlist and investor interest submissions stored via <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px] font-mono text-slate-900">POST /api/waitlist</code>.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={waitlistKey}
+              onChange={(e) => setWaitlistKey(e.target.value)}
+              placeholder="Admin key (WAITLIST_ADMIN_KEY)"
+            />
+            <Input
+              value={waitlistLimit}
+              onChange={(e) => setWaitlistLimit(e.target.value)}
+              placeholder="Limit (e.g. 100)"
+              className="w-24"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={loadWaitlist}
+              loading={waitlistLoading}
+            >
+              Load entries
+            </Button>
+          </div>
+          {waitlistError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
+              {waitlistError}
+            </div>
+          )}
+          {!waitlistLoading && !waitlistError && waitlistEntries.length === 0 && (
+            <p className="text-[11px] text-slate-500">
+              No entries loaded yet. Provide the admin key and click <span className="font-medium">Load entries</span> to view recent
+              waitlist and investor interest submissions.
+            </p>
+          )}
+          {waitlistEntries.length > 0 && (
+            <div className="mt-1 max-h-64 overflow-auto rounded border border-slate-200 bg-slate-950/90 p-2 text-[11px] text-slate-100">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-slate-700 text-[10px] uppercase tracking-wide text-slate-400">
+                    <th className="pb-1 pr-2">Email</th>
+                    <th className="pb-1 pr-2">Name</th>
+                    <th className="pb-1 pr-2">Source</th>
+                    <th className="pb-1">Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {waitlistEntries.map((e) => (
+                    <tr key={e.id} className="border-b border-slate-800 last:border-0">
+                      <td className="py-1 pr-2 font-mono text-[11px]">{e.email}</td>
+                      <td className="py-1 pr-2">{e.name || ''}</td>
+                      <td className="py-1 pr-2 text-slate-300">{e.source || 'waitlist'}</td>
+                      <td className="py-1 text-slate-300">{fmtTs(e.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardBody>
+      </Card>
 
       <p className="pt-2 text-[11px] text-slate-500">
         These tools are intended for devnet testing only. Do not use real customer data.

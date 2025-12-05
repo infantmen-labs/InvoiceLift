@@ -6,6 +6,7 @@ import { AnchorProvider, Program, web3, Idl, BN } from '@coral-xyz/anchor';
 import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token';
 import { useSignerMode } from '../state/signerMode';
 import { useToast } from '../components/Toast';
+import { useDevnetGuard } from '../state/devnetGuard';
 import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -22,6 +23,7 @@ export function MintInvoice(){
   const { mode, adminWallet } = useSignerMode();
   const { show } = useToast();
   const navigate = useNavigate();
+  const { requireDevnetAck } = useDevnetGuard();
 
   function toBaseUnits(v: string){
     const n = Number(v);
@@ -55,6 +57,7 @@ export function MintInvoice(){
       show({ text: 'Create Escrow submitted', href: `https://explorer.solana.com/tx/${j2.tx}?cluster=devnet`, linkText: 'View Tx', kind: 'success' });
       setResult({ invoice, mintTx, escrowTx: j2.tx });
       form.reset();
+      navigate(`/invoice/${invoice}`);
     }catch(err: any){
       setResult({ error: err?.message || String(err) });
     }finally{
@@ -71,6 +74,10 @@ export function MintInvoice(){
     const amountStr = String(data.get('amount') || '0');
     const dueDateStr = String(data.get('dueDate') || '0');
     if(!wallet.publicKey) { setResult({ error: 'Connect wallet first' }); return; }
+    if (requireDevnetAck) {
+      setResult({ error: 'This demo only works on Solana devnet. Switch your wallet network to Devnet/Testnet, then click "I\'m on devnet" next to the wallet button before minting.' });
+      return;
+    }
     const amount = toBaseUnits(amountStr);
     const dueDate = dueDateStr;
     setLoading(true);
@@ -134,6 +141,7 @@ export function MintInvoice(){
       try { await fetch(`${backend}/api/invoice/${invoiceId}`); } catch {}
       form.reset();
       setStep(1);
+      navigate(`/invoice/${invoiceId}`);
     }catch(err: any){
       setResult({ error: err?.message || String(err) });
     }finally{

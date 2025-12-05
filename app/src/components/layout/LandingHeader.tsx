@@ -30,7 +30,11 @@ export function LandingHeader(){
           {/* Logo */}
           <div className="inline-flex items-center justify-center">
             <div className="p-3 bg-gradient-to-br from-purple-600/20 to-purple-800/20 rounded-2xl backdrop-blur-sm border border-purple-500/30">
-              <img width={22} src='../../favicon/PRocket.png' alt="logo" className='animate-rocket' />
+              <img
+                width={24}
+                src='../../favicon/logo-192.png'
+                alt="InvoiceLift logo"
+              />
             </div>
           </div>
 
