@@ -28,7 +28,7 @@ export default function WaitListPage() {
       >
         <div className="inline-block px-6 py-3 bg-purple-500/10 border border-purple-500/30 rounded-full mb-8">
           <p className="text-purple-300 text-sm md:text-base font-medium">
-            🚀 Demo Version Now Live • Full Launch Coming Soon
+            Demo Version Now Live • Full Launch Coming Soon
           </p>
         </div>
       </Tilt>

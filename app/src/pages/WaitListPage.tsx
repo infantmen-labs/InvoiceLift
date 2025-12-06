@@ -8,11 +8,10 @@ import InvestorForm from './WaitListInvestorForm';
 import FAQ from './WaitListFAQ';
 
 import { 
-  Facebook,
   Twitter,
-  Instagram,
   Linkedin,
   Github,
+  Send as TelegramIcon,
 } from "lucide-react"
 
 
@@ -50,21 +49,31 @@ export function WaitListPage() {
 
         <footer className="relative z-10 text-center py-6 px-6 border-t border-gray-800/50">
           <p className="text-gray-400 text-sm">
-            © 2024 Solana DeFi. Built on Solana blockchain.
+            © 2025 Solana Defi. Built On Solana By{' '}
+            <a
+              href="https://github.com/infantmen-labs"
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2 decoration-gray-500 hover:text-gray-200 hover:decoration-gray-300"
+            >
+              Infantmen-Labs
+            </a>
+            .
           </p>
 
           <div className="mt-5 flex gap-5 justify-center items-center animate-fade-in">
             {/* Add each Social Media Url to each anchor tag */}
-            <a href="#">
-              <Facebook className="w-7 h-7 text-blue-600 cursor-pointer hover:scale-110 " />
-            </a>
-            <a href="#">
+            <a href="https://x.com/involift">
               <Twitter className="w-7 h-7 text-blue-400 cursor-pointer hover:scale-110" />
             </a>
             <a href="#">
-              <Instagram className="w-7 h-7 text-pink-500 cursor-pointer hover:scale-110" />
+              <TelegramIcon className="w-7 h-7 text-sky-400 cursor-pointer hover:scale-110" />
             </a>
-            <a href="#">
+            <a
+              href="https://github.com/infantmen-labs/InvoiceLift"
+              target="_blank"
+              rel="noreferrer"
+            >
               <Github className="w-7 h-7 text-blue-700 cursor-pointer hover:scale-110 " />
             </a>
 

@@ -3,22 +3,47 @@ import React from 'react'
 export function LandingFooter(){
   return (
     <footer className="border-t border-slate-800 bg-slate-950/90">
-      <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-4 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <div>
-          <span className="font-medium text-slate-400">InvoiceLift</span>{' '}
-          <span className="text-slate-600">· Devnet proof of concept</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 px-4 py-5 text-[11px] text-slate-400 sm:px-6">
+        <p className="text-center">
+          © 2025 solana defi. built on solana by{' '}
           <a
-            href="https://github.com/Sektorial12/InvoiceLift"
+            href="https://github.com/infantmen-labs"
             target="_blank"
             rel="noreferrer"
-            className="hover:text-slate-300"
+            className="underline decoration-slate-500 underline-offset-2 hover:text-slate-200 hover:decoration-slate-300"
           >
-            GitHub
+            infantmen-labs
           </a>
-          <span className="hidden h-1 w-1 rounded-full bg-slate-700 sm:inline-block" />
-          <span className="text-slate-600">Not for production use. Devnet only.</span>
+          .
+        </p>
+        <div className="flex items-center gap-4 text-lg">
+          <a
+            href="https://twitter.com"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-400 hover:text-sky-300"
+            aria-label="Twitter"
+          >
+            <i className="fab fa-twitter" />
+          </a>
+          <a
+            href="https://t.me"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-400 hover:text-sky-300"
+            aria-label="Telegram"
+          >
+            <i className="fab fa-telegram-plane" />
+          </a>
+          <a
+            href="https://github.com/infantmen-labs/InvoiceLift"
+            target="_blank"
+            rel="noreferrer"
+            className="text-slate-300 hover:text-white"
+            aria-label="GitHub"
+          >
+            <i className="fab fa-github" />
+          </a>
         </div>
       </div>
     </footer>
